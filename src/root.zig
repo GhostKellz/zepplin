@@ -1,23 +1,25 @@
-//! By convention, root.zig is the root source file when making a library.
+//! Zepplin - A lightweight, blazing-fast package manager for the Zig ecosystem
 const std = @import("std");
 
-pub fn advancedPrint() !void {
-    // Stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+// Export core modules
+pub const types = @import("common/types.zig");
+pub const cli = @import("cli/cli.zig");
+pub const commands = @import("cli/commands.zig");
+pub const server = @import("server/server.zig");
+pub const database = @import("database/database.zig");
+pub const auth = @import("auth/auth.zig");
+pub const storage = @import("storage/storage.zig");
+pub const config = @import("config/toml.zig");
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
-
-    try bw.flush(); // Don't forget to flush!
+pub fn getVersion() []const u8 {
+    return "0.1.0";
 }
 
-pub fn add(a: i32, b: i32) i32 {
-    return a + b;
-}
-
-test "basic add functionality" {
-    try std.testing.expect(add(3, 7) == 10);
+pub fn printBanner() void {
+    const banner =
+        \\⚡ Zepplin v{s}
+        \\Blazing-fast package manager for the Zig ecosystem
+        \\
+    ;
+    std.debug.print(banner, .{getVersion()});
 }

@@ -1,0 +1,12 @@
+[package]
+name = "zepplin"
+version = "0.1.0"
+description = "Zepplin self hosted zig packages & libraries!"
+author = "Christopher Kelley"
+license = "MIT"
+[dependencies]
+# Add your dependencies here
+# example = "1.0.0"
+
+[registries]
+default = "https://registry.zepplin.dev"

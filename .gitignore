@@ -1,4 +1,33 @@
+# Zig build artifacts
 /zig-cache/
 /zig-out/
 *.o
 *.exe
+
+# Package management files
+zepplin.lock
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Docker volumes
+data/
+
+# Environment files
+.env
+.env.local
+
+# Temporary files
+tmp/
+temp/

@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  zepplin-registry:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - zepplin-data:/data
+      - ./config:/config:ro
+    environment:
+      - ZEPPLIN_PORT=8080
+      - ZEPPLIN_DATA_DIR=/data
+      - ZEPPLIN_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - zepplin-network
+
+  # Optional: Add a reverse proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - zepplin-registry
+    networks:
+      - zepplin-network
+    profiles:
+      - production
+
+volumes:
+  zepplin-data:
+    driver: local
+
+networks:
+  zepplin-network:
+    driver: bridge

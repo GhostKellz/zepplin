@@ -27,8 +27,13 @@ pub fn build(b: *std.Build) void {
     // Zig modules are the preferred way of making Zig code available to consumers.
     // addModule defines a module that we intend to make available for importing
     // to our consumers. We must give it a name because a Zig package can expose
-    // multiple modules and consumers will need to be able to specify which
     // module they want to access.
+    // zqlite dependency for persistent storage
+    const zqlite = b.dependency("zqlite", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    
     const mod = b.addModule("zepplin", .{
         // The root source file is the "entry point" of this module. Users of
         // this module will only be able to access public declarations contained
@@ -83,6 +88,9 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+
+    // Add zqlite import using the correct module name from zqlite's build.zig
+    exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
