@@ -3,6 +3,7 @@ const types = @import("../common/types.zig");
 const Database = @import("../database/database.zig").Database;
 const Auth = @import("../auth/auth.zig").Auth;
 const Storage = @import("../storage/storage.zig").Storage;
+const ZigistryClient = @import("../zigistry/client.zig").ZigistryClient;
 
 const ServerError = error{
     BindFailed,
@@ -18,6 +19,7 @@ pub const Server = struct {
     database: Database,
     auth: Auth,
     storage: Storage,
+    zigistry: ZigistryClient,
 
     pub fn init(allocator: std.mem.Allocator, port: u16, data_dir: []const u8) !Server {
         const address = try std.net.Address.resolveIp("0.0.0.0", port);
@@ -34,12 +36,16 @@ pub const Server = struct {
         // Initialize storage
         const storage = try Storage.init(allocator, data_dir);
 
+        // Initialize Zigistry client
+        const zigistry = ZigistryClient.init(allocator, null);
+
         return Server{
             .allocator = allocator,
             .address = address,
             .database = database,
             .auth = auth,
             .storage = storage,
+            .zigistry = zigistry,
         };
     }
 
@@ -96,6 +102,12 @@ pub const Server = struct {
                 try self.handlePackageApi(stream, path);
             } else if (std.mem.startsWith(u8, path, "/api/search")) {
                 try self.handleSearchApi(stream, path);
+            } else if (std.mem.startsWith(u8, path, "/api/zigistry/discover")) {
+                try self.handleZigistryDiscover(stream, path);
+            } else if (std.mem.startsWith(u8, path, "/api/zigistry/trending")) {
+                try self.handleZigistryTrending(stream, path);
+            } else if (std.mem.startsWith(u8, path, "/api/zigistry/browse")) {
+                try self.handleZigistryBrowse(stream, path);
             } else {
                 try self.serve404(stream);
             }
@@ -134,13 +146,24 @@ pub const Server = struct {
             \\        .stat-card {{ background: #1e2328; padding: 1.5rem; border-radius: 8px; text-align: center; }}
             \\        .stat-card h3 {{ color: #f7931e; font-size: 2rem; margin-bottom: 0.5rem; }}
             \\        .packages {{ background: #1e2328; border-radius: 8px; padding: 1.5rem; }}
-            \\        .package-item {{ border-bottom: 1px solid #39414a; padding: 1rem 0; }}
-            \\        .package-item:last-child {{ border-bottom: none; }}
+            \\        .package-item {{ border-bottom: 1px solid #39414a; padding: 1rem 0; }}        \\        .package-item:last-child {{ border-bottom: none; }}
             \\        .package-name {{ color: #f7931e; font-size: 1.1rem; font-weight: bold; }}
             \\        .package-version {{ color: #36c692; margin-left: 0.5rem; }}
             \\        .package-desc {{ color: #b8b4a3; margin-top: 0.5rem; }}
             \\        .footer {{ text-align: center; margin-top: 3rem; color: #b8b4a3; }}
             \\        .search-results {{ display: none; background: #1e2328; border-radius: 8px; padding: 1rem; margin-top: 1rem; }}
+            \\        .tabs {{ display: flex; gap: 1rem; margin: 2rem 0 1rem 0; }}
+            \\        .tab {{ padding: 0.8rem 1.5rem; background: #1e2328; color: #b8b4a3; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; }}
+            \\        .tab.active {{ background: #f7931e; color: #1a1d23; font-weight: bold; }}
+            \\        .tab:hover {{ background: #36c692; color: #1a1d23; }}
+            \\        .tab-content {{ display: none; }}
+            \\        .tab-content.active {{ display: block; }}
+            \\        .zigistry-search {{ margin-bottom: 1rem; }}
+            \\        .zigistry-search input {{ width: 100%; padding: 1rem; background: #1e2328; border: 1px solid #36c692; border-radius: 8px; color: #e8e6e3; font-size: 1rem; }}
+            \\        .zigistry-results {{ margin-top: 1rem; }}
+            \\        .discover-section {{ margin: 1rem 0; }}
+            \\        .trending-btn, .browse-btn {{ padding: 0.6rem 1.2rem; background: #36c692; color: #1a1d23; border: none; border-radius: 6px; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; font-weight: bold; }}
+            \\        .trending-btn:hover, .browse-btn:hover {{ background: #f7931e; }}
             \\    </style>
             \\</head>
             \\<body>
@@ -148,14 +171,7 @@ pub const Server = struct {
             \\        <div class="header">
             \\            <h1>⚡ Zepplin Registry</h1>
             \\            <p>Blazing-fast package registry for the Zig ecosystem</p>
-            \\            <p style="margin-top: 0.5rem; font-size: 0.9rem;">🎉 <strong>Production Ready</strong> with zqlite database, authentication & search!</p>
-            \\        </div>
-            \\        
-            \\        <div class="search-box">
-            \\            <input type="text" placeholder="🔍 Search packages..." id="searchInput">
-            \\        </div>
-            \\        
-            \\        <div class="search-results" id="searchResults"></div>
+            \\            <p style="margin-top: 0.5rem; font-size: 0.9rem;">🎉 <strong>Production Ready</strong> with SQLite database, Zigistry discovery & search!</p>        \\        </div>
             \\        
             \\        <div class="stats">
             \\            <div class="stat-card">
@@ -172,15 +188,46 @@ pub const Server = struct {
             \\            </div>
             \\        </div>
             \\        
-            \\        <div class="packages" id="packagesList">
+            \\        <div class="tabs">
+            \\            <button class="tab active" onclick="switchTab('local')">🏠 Local Packages</button>
+            \\            <button class="tab" onclick="switchTab('discover')">🔍 Discover Packages</button>
+            \\        </div>
+            \\        
+            \\        <div id="local-tab" class="tab-content active">
+            \\        <div class="search-box">
+            \\            <input type="text" placeholder="🔍 Search packages..." id="searchInput">
+            \\        </div>
+            \\        
+            \\        <div class="search-results" id="searchResults"></div>
+            \\             \\        <div class="packages" id="packagesList">
             \\            <h2 style="margin-bottom: 1rem; color: #f7931e;">📦 Recent Packages</h2>
             \\            <div style="text-align: center; color: #b8b4a3; padding: 2rem;">
             \\                Loading packages...
             \\            </div>
             \\        </div>
+            \\        </div>
+            \\        
+            \\        <div id="discover-tab" class="tab-content">
+            \\            <div class="discover-section">
+            \\                <h2 style="color: #f7931e; margin-bottom: 1rem;">🌟 Quick Actions</h2>
+            \\                <button class="trending-btn" onclick="loadTrending()">🔥 Show Trending</button>
+            \\                <button class="browse-btn" onclick="loadCategory('web')">🌐 Web Frameworks</button>
+            \\                <button class="browse-btn" onclick="loadCategory('cli')">⚡ CLI Tools</button>
+            \\                <button class="browse-btn" onclick="loadCategory('gamedev')">🎮 Game Dev</button>
+            \\            </div>
+            \\            
+            \\            <div class="zigistry-search">
+            \\                <input type="text" placeholder="🔍 Discover packages from Zigistry..." id="zigistrySearchInput">
+            \\            </div>
+            \\            
+            \\            <div class="zigistry-results" id="zigistryResults">
+            \\                <h2 style="color: #f7931e; margin-bottom: 1rem;">🚀 Discover Zig Packages</h2>
+            \\                <p style="color: #b8b4a3;">Search for packages or use the quick actions above to explore the Zig ecosystem!</p>
+            \\            </div>
+            \\        </div>
             \\        
             \\        <div class="footer">
-            \\            <p>Made with Zig ⚡ | Powered by zqlite 🗄️ | Built for hackers 🛠️</p>
+            \\            <p>Made with Zig ⚡ | Powered by SQLite 🗄️ | Built for hackers 🛠️</p>
             \\        </div>
             \\    </div>
             \\    
@@ -241,10 +288,92 @@ pub const Server = struct {
             \\                        }}
             \\                    }})
             \\                    .catch(err => console.error('Search failed:', err));
-            \\            }} else {{
-            \\                searchResults.style.display = 'none';
             \\            }}
             \\        }});
+            \\        
+            \\        // Tab switching functionality
+            \\        function switchTab(tabName) {{
+            \\            // Hide all tab contents
+            \\            document.querySelectorAll('.tab-content').forEach(tab => {{
+            \\                tab.classList.remove('active');
+            \\            }});
+            \\            
+            \\            // Remove active class from all tabs
+            \\            document.querySelectorAll('.tab').forEach(tab => {{
+            \\                tab.classList.remove('active');
+            \\            }});
+            \\            
+            \\            // Show selected tab content
+            \\            document.getElementById(tabName + '-tab').classList.add('active');
+            \\            
+            \\            // Add active class to clicked tab
+            \\            event.target.classList.add('active');
+            \\        }}
+            \\        
+            \\        // Zigistry search functionality
+            \\        const zigistrySearchInput = document.getElementById('zigistrySearchInput');
+            \\        const zigistryResults = document.getElementById('zigistryResults');
+            \\        
+            \\        zigistrySearchInput.addEventListener('input', function(e) {{
+            \\            const query = e.target.value.trim();
+            \\            if (query.length > 2) {{
+            \\                fetch(`/api/zigistry/discover?q=${{encodeURIComponent(query)}}`)
+            \\                    .then(response => response.json())
+            \\                    .then(data => {{
+            \\                        displayZigistryResults(data.packages, `Search Results for "${{query}}"`);
+            \\                    }})
+            \\                    .catch(err => console.error('Zigistry search failed:', err));
+            \\            }} else if (query.length === 0) {{
+            \\                zigistryResults.innerHTML = `
+            \\                    <h2 style="color: #f7931e; margin-bottom: 1rem;">🚀 Discover Zig Packages</h2>
+            \\                    <p style="color: #b8b4a3;">Search for packages or use the quick actions above to explore the Zig ecosystem!</p>
+            \\                `;
+            \\            }}
+            \\        }});
+            \\        
+            \\        function loadTrending() {{
+            \\            fetch('/api/zigistry/trending')
+            \\                .then(response => response.json())
+            \\                .then(data => {{
+            \\                    displayZigistryResults(data.packages, '🔥 Trending Packages');
+            \\                }})
+            \\                .catch(err => console.error('Failed to load trending:', err));
+            \\        }}
+            \\        
+            \\        function loadCategory(category) {{
+            \\            fetch(`/api/zigistry/browse?category=${{category}}`)
+            \\                .then(response => response.json())
+            \\                .then(data => {{
+            \\                    displayZigistryResults(data.packages, `📦 ${{category.charAt(0).toUpperCase() + category.slice(1)}} Packages`);
+            \\                }})
+            \\                .catch(err => console.error('Failed to load category:', err));
+            \\        }}
+            \\        
+            \\        function displayZigistryResults(packages, title) {{
+            \\            if (packages && packages.length > 0) {{
+            \\                let html = `<h2 style="color: #f7931e; margin-bottom: 1rem;">${{title}}</h2>`;
+            \\                packages.forEach(pkg => {{
+            \\                    const topicsHtml = pkg.topics.map(topic => `<span style="background: #36c692; color: #1a1d23; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin-right: 0.3rem;">${{topic}}</span>`).join('');
+            \\                    html += `
+            \\                        <div class="package-item">
+            \\                            <div>
+            \\                                <span class="package-name">${{pkg.name}}</span>
+            \\                                <span style="color: #36c692; margin-left: 0.5rem;">⭐ ${{pkg.github_stars}} stars</span>
+            \\                                <span style="color: #b8b4a3; margin-left: 0.5rem;">📊 ${{pkg.zigistry_score.toFixed(2)}}</span>
+            \\                            </div>
+            \\                            <div class="package-desc">${{pkg.description || 'No description'}}</div>
+            \\                            <div style="margin-top: 0.5rem;">
+            \\                                ${{topicsHtml}}
+            \\                                <a href="${{pkg.github_url}}" target="_blank" style="color: #f7931e; margin-left: 0.5rem; text-decoration: none;">🔗 GitHub</a>
+            \\                            </div>
+            \\                        </div>
+            \\                    `;
+            \\                }});
+            \\                zigistryResults.innerHTML = html;
+            \\            }} else {{
+            \\                zigistryResults.innerHTML = `<h2 style="color: #f7931e; margin-bottom: 1rem;">${{title}}</h2><div style="text-align: center; color: #b8b4a3; padding: 1rem;">No packages found</div>`;
+            \\            }}
+            \\        }}
             \\    </script>
             \\</body>
             \\</html>
@@ -420,6 +549,215 @@ pub const Server = struct {
     fn serveMethodNotAllowed(self: *Server, stream: std.net.Stream) !void {
         const content = "405 Method Not Allowed";
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{s}", .{ content.len, content });
+        defer self.allocator.free(response);
+
+        try stream.writeAll(response);
+    }
+
+    fn handleZigistryDiscover(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse query parameter
+        var query: []const u8 = "";
+        if (std.mem.indexOf(u8, path, "?q=")) |idx| {
+            query = path[idx + 3 ..];
+            // URL decode would go here in production
+        }
+
+        const packages = try self.zigistry.searchPackages(query, 20);
+        defer {
+            for (packages) |*pkg| {
+                pkg.deinit(self.allocator);
+            }
+            self.allocator.free(packages);
+        }
+
+        // Build JSON response
+        var json_list = std.ArrayList(u8).init(self.allocator);
+        defer json_list.deinit();
+
+        try json_list.appendSlice("{\"packages\":[");
+        for (packages, 0..) |pkg, i| {
+            if (i > 0) try json_list.appendSlice(",");
+
+            const topics_json = blk: {
+                var topics_str = std.ArrayList(u8).init(self.allocator);
+                defer topics_str.deinit();
+                try topics_str.appendSlice("[");
+                for (pkg.topics, 0..) |topic, j| {
+                    if (j > 0) try topics_str.appendSlice(",");
+                    try topics_str.writer().print("\"{s}\"", .{topic});
+                }
+                try topics_str.appendSlice("]");
+                break :blk try topics_str.toOwnedSlice();
+            };
+            defer self.allocator.free(topics_json);
+
+            const pkg_json = try std.fmt.allocPrint(self.allocator,
+                \\{{
+                \\  "name": "{s}",
+                \\  "description": "{s}",
+                \\  "github_url": "{s}",
+                \\  "github_stars": {},
+                \\  "zigistry_score": {d:.2},
+                \\  "topics": {s}
+                \\}}
+            , .{
+                pkg.name,
+                pkg.description orelse "",
+                pkg.github_url,
+                pkg.github_stars,
+                pkg.zigistry_score,
+                topics_json,
+            });
+            defer self.allocator.free(pkg_json);
+
+            try json_list.appendSlice(pkg_json);
+        }
+        try json_list.appendSlice("],\"total\":");
+        try json_list.writer().print("{}", .{packages.len});
+        try json_list.appendSlice("}");
+
+        const json_response = try json_list.toOwnedSlice();
+        defer self.allocator.free(json_response);
+
+        const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{s}", .{ json_response.len, json_response });
+        defer self.allocator.free(response);
+
+        try stream.writeAll(response);
+    }
+
+    fn handleZigistryTrending(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        _ = path; // unused
+        const packages = try self.zigistry.getTrending(null, 20);
+        defer {
+            for (packages) |*pkg| {
+                pkg.deinit(self.allocator);
+            }
+            self.allocator.free(packages);
+        }
+
+        // Build JSON response
+        var json_list = std.ArrayList(u8).init(self.allocator);
+        defer json_list.deinit();
+
+        try json_list.appendSlice("{\"packages\":[");
+        for (packages, 0..) |pkg, i| {
+            if (i > 0) try json_list.appendSlice(",");
+
+            const topics_json = blk: {
+                var topics_str = std.ArrayList(u8).init(self.allocator);
+                defer topics_str.deinit();
+                try topics_str.appendSlice("[");
+                for (pkg.topics, 0..) |topic, j| {
+                    if (j > 0) try topics_str.appendSlice(",");
+                    try topics_str.writer().print("\"{s}\"", .{topic});
+                }
+                try topics_str.appendSlice("]");
+                break :blk try topics_str.toOwnedSlice();
+            };
+            defer self.allocator.free(topics_json);
+
+            const pkg_json = try std.fmt.allocPrint(self.allocator,
+                \\{{
+                \\  "name": "{s}",
+                \\  "description": "{s}",
+                \\  "github_url": "{s}",
+                \\  "github_stars": {},
+                \\  "zigistry_score": {d:.2},
+                \\  "topics": {s}
+                \\}}
+            , .{
+                pkg.name,
+                pkg.description orelse "",
+                pkg.github_url,
+                pkg.github_stars,
+                pkg.zigistry_score,
+                topics_json,
+            });
+            defer self.allocator.free(pkg_json);
+
+            try json_list.appendSlice(pkg_json);
+        }
+        try json_list.appendSlice("],\"total\":");
+        try json_list.writer().print("{}", .{packages.len});
+        try json_list.appendSlice("}");
+
+        const json_response = try json_list.toOwnedSlice();
+        defer self.allocator.free(json_response);
+
+        const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{s}", .{ json_response.len, json_response });
+        defer self.allocator.free(response);
+
+        try stream.writeAll(response);
+    }
+
+    fn handleZigistryBrowse(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse category parameter
+        var category: []const u8 = "all";
+        if (std.mem.indexOf(u8, path, "?category=")) |idx| {
+            category = path[idx + 10 ..];
+            // URL decode would go here in production
+        }
+
+        const packages = try self.zigistry.getTrending(if (std.mem.eql(u8, category, "all")) null else category, 20);
+        defer {
+            for (packages) |*pkg| {
+                pkg.deinit(self.allocator);
+            }
+            self.allocator.free(packages);
+        }
+
+        // Build JSON response
+        var json_list = std.ArrayList(u8).init(self.allocator);
+        defer json_list.deinit();
+
+        try json_list.appendSlice("{\"packages\":[");
+        for (packages, 0..) |pkg, i| {
+            if (i > 0) try json_list.appendSlice(",");
+
+            const topics_json = blk: {
+                var topics_str = std.ArrayList(u8).init(self.allocator);
+                defer topics_str.deinit();
+                try topics_str.appendSlice("[");
+                for (pkg.topics, 0..) |topic, j| {
+                    if (j > 0) try topics_str.appendSlice(",");
+                    try topics_str.writer().print("\"{s}\"", .{topic});
+                }
+                try topics_str.appendSlice("]");
+                break :blk try topics_str.toOwnedSlice();
+            };
+            defer self.allocator.free(topics_json);
+
+            const pkg_json = try std.fmt.allocPrint(self.allocator,
+                \\{{
+                \\  "name": "{s}",
+                \\  "description": "{s}",
+                \\  "github_url": "{s}",
+                \\  "github_stars": {},
+                \\  "zigistry_score": {d:.2},
+                \\  "topics": {s}
+                \\}}
+            , .{
+                pkg.name,
+                pkg.description orelse "",
+                pkg.github_url,
+                pkg.github_stars,
+                pkg.zigistry_score,
+                topics_json,
+            });
+            defer self.allocator.free(pkg_json);
+
+            try json_list.appendSlice(pkg_json);
+        }
+        try json_list.appendSlice("],\"total\":");
+        try json_list.writer().print("{}", .{packages.len});
+        try json_list.appendSlice(",\"category\":\"");
+        try json_list.appendSlice(category);
+        try json_list.appendSlice("\"}");
+
+        const json_response = try json_list.toOwnedSlice();
+        defer self.allocator.free(json_response);
+
+        const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{s}", .{ json_response.len, json_response });
         defer self.allocator.free(response);
 
         try stream.writeAll(response);

@@ -1,6 +1,6 @@
 # 🚀 Zepplin Commands Reference
 
-Complete command reference for the Zepplin Zig Package Manager with ZQLITE persistent storage.
+Complete command reference for the Zepplin Zig Package Manager with SQLite persistent storage.
 
 ---
 
@@ -45,7 +45,7 @@ zepplin add xev --registry https://packages.ziglang.org
 - Downloads package metadata from registry
 - Updates `build.zig.zon` dependencies
 - Resolves version conflicts
-- Stores package in local cache (ZQLITE database)
+- Stores package in local cache (SQLite database)
 
 **Example output:**
 ```
@@ -166,7 +166,7 @@ zepplin serve 8080 --data-dir ./registry-data
 **What it does:**
 - Starts HTTP server with REST API
 - Serves web UI for package browsing
-- Uses ZQLITE database for persistent storage
+- Uses SQLite database for persistent storage
 - Provides package upload/download endpoints
 
 **API Endpoints:**
@@ -180,7 +180,7 @@ zepplin serve 8080 --data-dir ./registry-data
 ```
 🚀 Zepplin Registry Server starting on http://localhost:8080
 📦 Ready to serve packages!
-🗄️ Using ZQLITE database: ./data/registry.db
+🗄️ Using SQLite database: ./data/registry.db
 ```
 
 ---
@@ -220,7 +220,7 @@ zepplin cache info
 ```
 
 **What it does:**
-- Manages ZQLITE database cache
+- Manages SQLite database cache
 - Shows storage usage and statistics
 - Verifies package integrity
 - Cleans up orphaned packages
@@ -273,7 +273,7 @@ docker-compose down
 **Services:**
 - `zepplin` - Main registry server (port 8080)
 - `nginx` - Reverse proxy (port 80)
-- Persistent ZQLITE database storage
+- Persistent SQLite database storage
 
 ---
 
@@ -285,7 +285,7 @@ your-project/
 ├── build.zig.zon          # Package metadata & dependencies
 ├── src/                   # Source code
 ├── .zepplin/              # Zepplin configuration
-│   ├── cache/             # Package cache (ZQLITE database)
+│   ├── cache/             # Package cache (SQLite database)
 │   └── config.toml        # Local configuration
 └── zig-out/               # Build artifacts
 ```
@@ -392,21 +392,22 @@ version_strategy = "conservative"
 
 ## 📈 **Performance Notes**
 
-With ZQLITE v0.4.0 integration:
-- **90% faster** package searches (B-tree indexing)
-- **95% faster** cache operations (LRU optimization)
-- **50% less** memory fragmentation (pooled allocation)
-- **Native JOIN queries** for complex dependency resolution
-- **Aggregate functions** for registry statistics
+With SQLite v3.x integration:
+- **Stable and reliable** database operations (ACID compliance)
+- **High performance** read-heavy operations (B-tree indexing)
+- **Zero configuration** embedded database
+- **Cross-platform** compatibility
+- **Native SQL queries** for complex operations
+- **Built-in security** with prepared statements
 
 ---
 
 ## 🔗 **Related Documentation**
 
-- [ZQLITE_NEW_DEV_NOTES.md](ZQLITE_NEW_DEV_NOTES.md) - ZQLITE v0.4.0 migration guide
+- [SQLITE_INTEGRATION.md](SQLITE_INTEGRATION.md) - SQLite integration details
 - [README.md](README.md) - Project overview and setup
 - [LXC-SETUP.md](LXC-SETUP.md) - Proxmox LXC deployment
-- [ZQLITE_INTEGRATION.md](ZQLITE_INTEGRATION.md) - Technical integration details
+- [ZCRYPTO_INTEGRATION.md](ZCRYPTO_INTEGRATION.md) - Cryptographic features
 
 ---
 

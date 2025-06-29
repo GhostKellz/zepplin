@@ -1,13 +1,12 @@
 const std = @import("std");
 const types = @import("../common/types.zig");
 
-/// In-memory database implementation (ready for zqlite upgrade)
+/// In-memory database implementation (ready for SQLite upgrade)
 /// This provides a working package registry with all the features
 /// needed for Zepplin, using HashMaps and ArrayLists for storage.
 ///
-/// When zqlite hash is fixed, this can be easily replaced with:
-/// const zqlite = @import("zqlite");
-/// And the storage can be upgraded to persistent SQLite.
+/// The SQLite implementation at database_sqlite.zig provides
+/// persistent storage with excellent performance.
 pub const Database = struct {
     allocator: std.mem.Allocator,
     packages: std.ArrayList(types.Package),
@@ -24,9 +23,8 @@ pub const Database = struct {
     };
 
     pub fn init(allocator: std.mem.Allocator, db_path: []const u8) !Database {
-        // TODO: When zqlite is available, use:
-        // const db = try zqlite.open(db_path);
-        _ = db_path; // For now, just use in-memory storage
+        // For in-memory storage, db_path is ignored
+        _ = db_path;
 
         var database = Database{
             .allocator = allocator,
@@ -63,12 +61,12 @@ pub const Database = struct {
         });
 
         try database.packages.append(types.Package{
-            .name = "zqlite",
-            .version = "0.3.0",
-            .description = "Pure Zig SQLite alternative",
-            .author = "GhostKellz",
-            .license = "MIT",
-            .repository = "https://github.com/ghostkellz/zqlite",
+            .name = "sqlite",
+            .version = "3.46.0",
+            .description = "Embedded SQL database engine",
+            .author = "SQLite Development Team",
+            .license = "Public Domain",
+            .repository = "https://www.sqlite.org/",
             .dependencies = &[_]types.Dependency{},
             .file_path = null,
             .file_size = null,
@@ -101,7 +99,7 @@ pub const Database = struct {
         // Add some download stats
         try database.download_stats.put("xev", 1247);
         try database.download_stats.put("zig-cli", 856);
-        try database.download_stats.put("zqlite", 342);
+        try database.download_stats.put("sqlite", 342);
 
         return database;
     }
@@ -114,7 +112,7 @@ pub const Database = struct {
 
     // Package operations
     pub fn addPackage(self: *Database, package: types.Package) !void {
-        // TODO: When zqlite is available, use SQL INSERT
+        // In-memory implementation for testing/fallback
         try self.packages.append(package);
     }
 
@@ -158,7 +156,7 @@ pub const Database = struct {
 
     // User operations
     pub fn createUser(self: *Database, username: []const u8, email: []const u8, password_hash: []const u8, api_token: []const u8) !void {
-        // TODO: When zqlite is available, use SQL INSERT
+        // In-memory implementation for testing/fallback
         try self.users.put(username, User{
             .username = username,
             .email = email,
@@ -212,25 +210,6 @@ pub const Database = struct {
     }
 };
 
-// TODO: When zqlite hash is fixed, replace this file with:
-//
-// const std = @import("std");
-// const zqlite = @import("zqlite");
-// const types = @import("../common/types.zig");
-//
-// pub const Database = struct {
-//     db: *zqlite.db.Connection,
-//     allocator: std.mem.Allocator,
-//
-//     pub fn init(allocator: std.mem.Allocator, db_path: []const u8) !Database {
-//         const db = try zqlite.open(db_path);
-//         // ... SQL table creation from CIPHER_INTEGRATION.md example
-//         return Database{ .db = db, .allocator = allocator };
-//     }
-//
-//     pub fn deinit(self: *Database) void {
-//         self.db.close();
-//     }
-//
-//     // ... implement all methods with SQL queries
-// };
+// NOTE: This in-memory implementation is used as a fallback.
+// For persistent storage, use database_sqlite.zig which provides
+// full SQLite integration with excellent performance and reliability.

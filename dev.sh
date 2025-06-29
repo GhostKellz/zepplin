@@ -80,21 +80,46 @@ run_server() {
 
 # Build and run with Docker
 docker_build() {
-    print_step "Building Docker image..."
+    print_step "Building Zepplin Docker image..."
     docker build -t zepplin:latest .
-    print_info "Docker image built successfully!"
+    print_info "Docker image 'zepplin:latest' built successfully!"
+    print_info "Image size: $(docker images zepplin:latest --format 'table {{.Size}}' | tail -n 1)"
 }
 
 docker_run() {
     local port=${1:-8080}
     print_step "Running Zepplin in Docker on port $port..."
+    print_info "Container will bind to: 0.0.0.0:$port"
     print_info "Access the web interface at: http://localhost:$port"
-    docker run --rm -p "$port:8080" zepplin:latest
+    print_info "Data will be stored in a Docker volume"
+    print_warning "Press Ctrl+C to stop the container"
+    docker run --rm -p "$port:8080" -v zepplin-data:/app/data --name zepplin-registry zepplin:latest
+}
+
+# Production deployment with Docker Compose
+docker_up() {
+    print_step "Starting Zepplin with Docker Compose..."
+    docker-compose up --build -d
+    print_info "Zepplin is running in the background"
+    print_info "Check status with: docker-compose ps"
+    print_info "View logs with: docker-compose logs -f"
+}
+
+docker_down() {
+    print_step "Stopping Zepplin Docker Compose..."
+    docker-compose down
+    print_info "All containers stopped"
+}
+
+docker_logs() {
+    print_step "Showing Zepplin logs..."
+    docker-compose logs -f
 }
 
 # Development environment with Docker Compose
 dev_up() {
     print_step "Starting development environment..."
+    print_info "This will build and start Zepplin in development mode"
     docker-compose up --build
 }
 
@@ -121,8 +146,15 @@ show_help() {
     echo "  test               Run tests"
     echo "  run [args...]      Run the CLI with optional arguments"
     echo "  serve [port]       Run the registry server (default port: 8080)"
+    echo ""
+    echo "Docker Commands:"
     echo "  docker-build       Build Docker image"
     echo "  docker-run [port]  Run in Docker (default port: 8080)"
+    echo "  docker-up          Start with Docker Compose (production)"
+    echo "  docker-down        Stop Docker Compose"
+    echo "  docker-logs        Show Docker logs"
+    echo ""
+    echo "Development Commands:"
     echo "  dev-up             Start development environment with Docker Compose"
     echo "  dev-down           Stop development environment"
     echo "  clean              Clean build artifacts"
@@ -140,8 +172,8 @@ show_help() {
     echo ""
     echo "Database Integration:"
     echo "  Current: In-memory storage (demo mode)"
-    echo "  Next: zqlite integration for persistent storage"
-    echo "  TODO: Fix zqlite hash in build.zig.zon for production use"
+    echo "  Next: SQLite integration for persistent storage"
+    echo "  TODO: Enhance SQLite performance for production use"
 }
 
 # Reset database (for when we have persistent storage)
@@ -220,6 +252,15 @@ case "${1:-help}" in
         ;;
     "docker-run")
         docker_run "${2:-8080}"
+        ;;
+    "docker-up")
+        docker_up
+        ;;
+    "docker-down")
+        docker_down
+        ;;
+    "docker-logs")
+        docker_logs
         ;;
     "dev-up")
         dev_up

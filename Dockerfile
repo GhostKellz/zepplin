@@ -1,15 +1,17 @@
-# Multi-stage Docker build for Zepplin
+# Multi-stage Docker build for Zepplin Registry
 FROM alpine:3.19 AS zig-builder
 
-# Install dependencies
+# Install build dependencies
 RUN apk add --no-cache \
     curl \
     xz \
+    sqlite-dev \
+    build-base \
     && rm -rf /var/cache/apk/*
 
-# Install Zig
-ARG ZIG_VERSION=0.13.0
-RUN curl -L "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" | tar -xJ -C /opt \
+# Install Zig 0.15.0-dev (latest development version)
+ARG ZIG_VERSION=0.15.0-dev.847+850655f06
+RUN curl -L "https://ziglang.org/builds/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" | tar -xJ -C /opt \
     && ln -s "/opt/zig-linux-x86_64-${ZIG_VERSION}/zig" /usr/local/bin/zig
 
 # Build stage
@@ -18,41 +20,49 @@ FROM zig-builder AS builder
 WORKDIR /app
 COPY . .
 
-# Build the application
+# Build the application with optimizations
 RUN zig build -Doptimize=ReleaseFast
 
-# Runtime stage
+# Runtime stage - minimal Alpine with SQLite
 FROM alpine:3.19
 
 # Install runtime dependencies
 RUN apk add --no-cache \
+    sqlite \
     ca-certificates \
+    tzdata \
     && rm -rf /var/cache/apk/*
 
-# Create non-root user
-RUN addgroup -g 1000 zepplin && \
-    adduser -D -s /bin/sh -u 1000 -G zepplin zepplin
+# Create non-root user for security
+RUN addgroup -g 1001 zepplin && \
+    adduser -D -s /bin/sh -u 1001 -G zepplin zepplin
 
-# Create data directories
-RUN mkdir -p /data/packages /data/index && \
-    chown -R zepplin:zepplin /data
+# Create application directories with proper permissions
+RUN mkdir -p /app/data /app/logs && \
+    chown -R zepplin:zepplin /app
 
-# Copy binary
+# Copy the compiled binary
 COPY --from=builder /app/zig-out/bin/zepplin /usr/local/bin/zepplin
 RUN chmod +x /usr/local/bin/zepplin
 
 # Switch to non-root user
 USER zepplin
+WORKDIR /app
 
-# Create volume for persistent data
-VOLUME ["/data"]
+# Create persistent volume mount point
+VOLUME ["/app/data"]
 
-# Expose port
+# Expose application port (nginx will proxy to this)
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+# Health check for container orchestration
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
 
-# Default command
+# Set environment variables for production
+ENV ZIG_ENV=production
+ENV ZEPPLIN_DATA_DIR=/app/data
+ENV ZEPPLIN_LOG_LEVEL=info
+
+# Default command - start the registry server
 CMD ["zepplin", "serve", "8080"]

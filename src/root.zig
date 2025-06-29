@@ -10,6 +10,7 @@ pub const database = @import("database/database.zig");
 pub const auth = @import("auth/auth.zig");
 pub const storage = @import("storage/storage.zig");
 pub const config = @import("config/toml.zig");
+pub const zigistry = @import("zigistry/client.zig");
 
 pub fn getVersion() []const u8 {
     return "0.1.0";

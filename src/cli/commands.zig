@@ -18,6 +18,9 @@ pub const Command = enum {
     publish,
     login,
     help,
+    discover,
+    browse,
+    trending,
 
     pub fn fromString(str: []const u8) ?Command {
         if (std.mem.eql(u8, str, "init")) return .init;
@@ -27,6 +30,9 @@ pub const Command = enum {
         if (std.mem.eql(u8, str, "publish")) return .publish;
         if (std.mem.eql(u8, str, "login")) return .login;
         if (std.mem.eql(u8, str, "help")) return .help;
+        if (std.mem.eql(u8, str, "discover")) return .discover;
+        if (std.mem.eql(u8, str, "browse")) return .browse;
+        if (std.mem.eql(u8, str, "trending")) return .trending;
         return null;
     }
 };
@@ -37,6 +43,7 @@ pub const CliArgs = struct {
     version: ?[]const u8 = null,
     registry_url: ?[]const u8 = null,
     auth_token: ?[]const u8 = null,
+    category: ?[]const u8 = null,
     verbose: bool = false,
 };
 
@@ -59,6 +66,17 @@ pub fn parseArgs(args: [][:0]u8) !CliArgs {
         .login => {
             if (args.len > 2) cli_args.registry_url = args[2];
         },
+        .discover => {
+            if (args.len > 2) cli_args.package_name = args[2];
+        },
+        .browse, .trending => {
+            // Parse --category=<name> option
+            for (args[2..]) |arg| {
+                if (std.mem.startsWith(u8, arg, "--category=")) {
+                    cli_args.category = arg[11..]; // Skip "--category="
+                }
+            }
+        },
         else => {},
     }
 
@@ -79,6 +97,9 @@ pub fn printHelp() void {
         \\    build              Build the project with dependencies
         \\    publish            Publish package to registry
         \\    login [registry]   Authenticate with registry
+        \\    discover [query]   Discover packages via Zigistry
+        \\    browse             Browse packages by category
+        \\    trending           Show trending packages
         \\    help               Show this help message
         \\
         \\EXAMPLES:
@@ -86,6 +107,9 @@ pub fn printHelp() void {
         \\    zepplin add xev
         \\    zepplin add xev@1.2.0
         \\    zepplin publish
+        \\    zepplin discover "web framework"
+        \\    zepplin browse --category=cli
+        \\    zepplin trending
         \\
     ;
 

@@ -1,7 +1,24 @@
 #!/bin/bash
 
 # Proxmox LXC Container Setup for Zepplin Registry using Community Docker Script
-# Usage: ./setup-lxc.sh <container_id> <container_name> [bridge] [ip_type]
+# 
+# This script creates a Docker-enabled LXC container on Proxmox and deploys Zepplin inside it.
+# It uses the community Docker setup script and then adds Zepplin-specific configuration.
+#
+# Usage Examples:
+#   ./setup-lxc.sh                                    # Default: ID=100, DHCP
+#   ./setup-lxc.sh 101 zepplin-prod                   # Custom ID and name
+#   ./setup-lxc.sh 102 zepplin-dev vmbr1             # Custom bridge
+#   ./setup-lxc.sh 103 zepplin-test vmbr0 dhcp 9080  # Custom port
+#   ./setup-lxc.sh 104 zepplin-static vmbr0 "192.168.1.100/24,gw=192.168.1.1" 8080
+#
+# Arguments:
+#   $1: container_id    (default: 100)
+#   $2: container_name  (default: zepplin-registry)  
+#   $3: bridge         (default: vmbr0)
+#   $4: ip_config      (default: dhcp, or "ip/mask,gw=gateway")
+#   $5: zepplin_port   (default: 8080)
+#
 # Uses: https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/docker.sh
 set -e
 
@@ -39,13 +56,15 @@ echo -e "${NC}"
 CONTAINER_ID=${1:-100}
 CONTAINER_NAME=${2:-zepplin-registry}
 BRIDGE=${3:-vmbr0}
-IP_TYPE=${4:-dhcp}
+IP_CONFIG=${4:-dhcp}  # Can be 'dhcp' or 'static=192.168.1.100/24,gw=192.168.1.1'
+ZEPPLIN_PORT=${5:-8080}
 
 print_info "Creating Docker LXC container for Zepplin Registry"
 print_info "Container ID: $CONTAINER_ID"
 print_info "Container Name: $CONTAINER_NAME"
 print_info "Bridge: $BRIDGE"
-print_info "IP Type: $IP_TYPE"
+print_info "IP Config: $IP_CONFIG"
+print_info "Zepplin Port: $ZEPPLIN_PORT"
 
 # Download and run the community Docker setup script
 print_step "Downloading community Docker LXC setup script..."
@@ -53,12 +72,39 @@ wget -O /tmp/docker-lxc-setup.sh https://raw.githubusercontent.com/community-scr
 chmod +x /tmp/docker-lxc-setup.sh
 
 print_step "Running Docker LXC setup (this will create the container with Docker)..."
+# Set environment variables for the community script
+export CTID=$CONTAINER_ID
+export HOSTNAME=$CONTAINER_NAME
+export PCT_OSTYPE=debian
+export PCT_OSVERSION=12
+export VERBOSE=1
+
 # Run the community script with our parameters
-CTID=$CONTAINER_ID HOSTNAME=$CONTAINER_NAME /tmp/docker-lxc-setup.sh
+/tmp/docker-lxc-setup.sh
 
 # Wait for container to be ready
 print_step "Waiting for container to be fully ready..."
 sleep 15
+
+# Check if container was created successfully
+if ! pct status $CONTAINER_ID >/dev/null 2>&1; then
+    print_error "Container $CONTAINER_ID was not created successfully!"
+    exit 1
+fi
+
+print_step "Container created successfully, starting if not running..."
+pct start $CONTAINER_ID 2>/dev/null || true
+
+# Configure network if static IP was requested
+if [[ "$IP_CONFIG" != "dhcp" && "$IP_CONFIG" != "DHCP" ]]; then
+    print_step "Configuring static IP: $IP_CONFIG"
+    pct set $CONTAINER_ID -net0 name=eth0,bridge=$BRIDGE,ip=$IP_CONFIG
+    pct stop $CONTAINER_ID
+    sleep 5
+    pct start $CONTAINER_ID
+fi
+
+sleep 10
 
 # Function to execute commands in container
 exec_in_container() {
@@ -66,12 +112,37 @@ exec_in_container() {
 }
 
 print_step "Verifying Docker installation..."
-exec_in_container "docker --version"
-exec_in_container "docker-compose --version"
+if ! exec_in_container "docker --version" >/dev/null 2>&1; then
+    print_error "Docker is not properly installed in container!"
+    exit 1
+fi
+
+if ! exec_in_container "docker-compose --version" >/dev/null 2>&1; then
+    print_warning "docker-compose not found, trying to install..."
+    exec_in_container "apt-get update && apt-get install -y docker-compose-plugin"
+fi
+
+print_step "Installing curl for healthchecks..."
+exec_in_container "apt-get update && apt-get install -y curl"
 
 print_step "Setting up Zepplin deployment directory..."
 exec_in_container "mkdir -p /opt/zepplin"
-exec_in_container "cd /opt/zepplin && git clone https://github.com/ghostkellz/zepplin.git ."
+
+# Option 1: Clone from git (update URL as needed)
+# exec_in_container "cd /opt/zepplin && git clone https://github.com/your-username/zepplin.git ."
+
+# Option 2: Copy current project files (for development)
+print_info "Copying current project files to container..."
+if [ -d "$(pwd)/src" ]; then
+    print_info "Found local Zepplin project, copying files..."
+    tar czf /tmp/zepplin-project.tar.gz --exclude='.git' --exclude='zig-out' --exclude='.zig-cache' --exclude='data' --exclude='test_db' .
+    pct push $CONTAINER_ID /tmp/zepplin-project.tar.gz /tmp/zepplin-project.tar.gz
+    exec_in_container "cd /opt/zepplin && tar xzf /tmp/zepplin-project.tar.gz && rm /tmp/zepplin-project.tar.gz"
+    rm -f /tmp/zepplin-project.tar.gz
+else
+    print_warning "No local project found, cloning from git..."
+    exec_in_container "cd /opt/zepplin && git clone https://github.com/your-username/zepplin.git ."
+fi
 
 print_step "Creating Docker Compose deployment for Zepplin..."
 pct push $CONTAINER_ID - /opt/zepplin/docker-compose.yml <<EOF
@@ -83,14 +154,15 @@ services:
     container_name: zepplin-registry
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${ZEPPLIN_PORT}:8080"
     volumes:
       - zepplin_data:/app/data
       - ./data:/app/data
     environment:
       - ZEPPLIN_DATA_DIR=/app/data
+      - ZEPPLIN_PORT=8080
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -98,6 +170,7 @@ services:
 
 volumes:
   zepplin_data:
+    driver: local
 EOF
 
 print_step "Creating management scripts..."
@@ -160,42 +233,46 @@ exec_in_container "cd /opt/zepplin && docker-compose build"
 exec_in_container "cd /opt/zepplin && docker-compose up -d"
 
 # Get container IP
-CONTAINER_IP=$(pct exec $CONTAINER_ID -- hostname -I | awk '{print $1}')
+CONTAINER_IP=$(pct exec $CONTAINER_ID -- hostname -I | awk '{print $1}' | tr -d '\n')
 
 print_step "Installation completed successfully!"
+echo ""
+print_info "🎉 Zepplin Registry is now running!"
 echo ""
 print_info "Container Details:"
 print_info "  ID: $CONTAINER_ID"
 print_info "  Name: $CONTAINER_NAME"
 print_info "  Bridge: $BRIDGE"
 print_info "  IP: $CONTAINER_IP"
+print_info "  Port: $ZEPPLIN_PORT"
 echo ""
-print_info "Zepplin Registry URL:"
-print_info "  http://$CONTAINER_IP:8080"
+print_info "Access URLs:"
+print_info "  Internal: http://$CONTAINER_IP:$ZEPPLIN_PORT"
+print_info "  Web Interface: http://$CONTAINER_IP:$ZEPPLIN_PORT"
+print_info "  API Base: http://$CONTAINER_IP:$ZEPPLIN_PORT/api"
 echo ""
 print_info "Management Commands:"
-print_info "  pct enter $CONTAINER_ID                           # Enter container"
-print_info "  pct exec $CONTAINER_ID -- /opt/zepplin/manage.sh status   # Check status"
-print_info "  pct exec $CONTAINER_ID -- /opt/zepplin/manage.sh logs     # View logs"
-print_info "  pct exec $CONTAINER_ID -- /opt/zepplin/manage.sh start    # Start containers"
-print_info "  pct exec $CONTAINER_ID -- /opt/zepplin/manage.sh stop     # Stop containers"
+print_info "  Enter container:           pct enter $CONTAINER_ID"
+print_info "  Check container status:    pct status $CONTAINER_ID"
+print_info "  Stop container:            pct stop $CONTAINER_ID"
+print_info "  Start container:           pct start $CONTAINER_ID"
 echo ""
-print_info "Docker Commands (inside container):"
-print_info "  /opt/zepplin/manage.sh start     # Start Zepplin"
-print_info "  /opt/zepplin/manage.sh stop      # Stop Zepplin"
-print_info "  /opt/zepplin/manage.sh restart   # Restart Zepplin"
-print_info "  /opt/zepplin/manage.sh rebuild   # Rebuild from scratch"
-print_info "  /opt/zepplin/manage.sh update    # Pull updates and rebuild"
-print_info "  /opt/zepplin/manage.sh shell     # Access container shell"
+print_info "Zepplin Management (inside container):"
+print_info "  /opt/zepplin/manage.sh status     # Check Zepplin status"
+print_info "  /opt/zepplin/manage.sh logs       # View logs"
+print_info "  /opt/zepplin/manage.sh start      # Start Zepplin"
+print_info "  /opt/zepplin/manage.sh stop       # Stop Zepplin"
+print_info "  /opt/zepplin/manage.sh restart    # Restart Zepplin"
+print_info "  /opt/zepplin/manage.sh rebuild    # Rebuild from scratch"
+print_info "  /opt/zepplin/manage.sh update     # Pull updates and rebuild"
+print_info "  /opt/zepplin/manage.sh shell      # Access container shell"
 echo ""
-print_warning "Next Steps:"
-print_warning "1. Configure your nginx reverse proxy to point to $CONTAINER_IP:8080"
-print_warning "2. Configure backup for Docker volumes"
-print_warning "3. Monitor logs with: /opt/zepplin/manage.sh logs"
-
-echo ""
-print_info "🎉 Zepplin Registry is now running in Docker containers!"
-print_info "Visit http://$CONTAINER_IP:8080 to access the web interface"
+print_warning "Production Setup:"
+print_warning "1. Configure nginx reverse proxy to: http://$CONTAINER_IP:$ZEPPLIN_PORT"
+print_warning "2. Set up SSL certificate for your domain"
+print_warning "3. Configure backup for Docker volumes: /var/lib/docker/volumes/zepplin_*"
+print_warning "4. Monitor logs: pct exec $CONTAINER_ID -- /opt/zepplin/manage.sh logs"
+print_warning "5. Update Zepplin: pct exec $CONTAINER_ID -- /opt/zepplin/manage.sh update"
 
 # Clean up
 rm -f /tmp/docker-lxc-setup.sh

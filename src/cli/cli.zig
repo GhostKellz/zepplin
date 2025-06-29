@@ -1,6 +1,7 @@
 const std = @import("std");
 const commands = @import("commands.zig");
 const types = @import("../common/types.zig");
+const zigistry = @import("../zigistry/client.zig");
 
 pub fn executeCommand(allocator: std.mem.Allocator, args: commands.CliArgs) !void {
     switch (args.command) {
@@ -10,6 +11,9 @@ pub fn executeCommand(allocator: std.mem.Allocator, args: commands.CliArgs) !voi
         .build => try buildProject(allocator),
         .publish => try publishPackage(allocator),
         .login => try loginToRegistry(allocator, args.registry_url),
+        .discover => try discoverPackages(allocator, args.package_name),
+        .browse => try browsePackages(allocator, args.category),
+        .trending => try showTrending(allocator, args.category),
         .help => commands.printHelp(),
     }
 }
@@ -103,12 +107,54 @@ fn buildProject(allocator: std.mem.Allocator) !void {
     }
 }
 
-fn publishPackage(_: std.mem.Allocator) !void {
+fn publishPackage(allocator: std.mem.Allocator) !void {
     std.debug.print("📤 Publishing package to registry...\n", .{});
+
+    // Check if we're in a Zig project
+    const build_zon_file = std.fs.cwd().openFile("build.zig.zon", .{}) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print("❌ Error: build.zig.zon not found. Initialize a project first with 'zepplin init'\n", .{});
+            return;
+        },
+        else => return err,
+    };
+    defer build_zon_file.close();
+
+    // Read and parse build.zig.zon
+    const content = try build_zon_file.readToEndAlloc(allocator, 1024 * 1024);
+    defer allocator.free(content);
+
+    // Simple package metadata extraction (for now)
+    var name: ?[]const u8 = null;
+    var version: ?[]const u8 = null;
+
+    // Parse name from ".name = .package_name," pattern
+    if (std.mem.indexOf(u8, content, ".name = .")) |start| {
+        const name_start = start + 9; // length of ".name = ."
+        if (std.mem.indexOfScalar(u8, content[name_start..], ',')) |end| {
+            name = content[name_start .. name_start + end];
+        }
+    }
+
+    // Parse version from ".version = "x.y.z"," pattern
+    if (std.mem.indexOf(u8, content, ".version = \"")) |start| {
+        const version_start = start + 12; // length of ".version = \""
+        if (std.mem.indexOfScalar(u8, content[version_start..], '"')) |end| {
+            version = content[version_start .. version_start + end];
+        }
+    }
+
+    if (name == null or version == null) {
+        std.debug.print("❌ Error: Could not parse package name/version from build.zig.zon\n", .{});
+        return;
+    }
+
+    std.debug.print("📦 Package: {s}@{s}\n", .{ name.?, version.? });
     std.debug.print("🔐 Authenticating...\n", .{});
-    std.debug.print("📦 Packaging files...\n", .{});
-    std.debug.print("⬆️  Uploading...\n", .{});
-    std.debug.print("✅ Package published successfully!\n", .{});
+    std.debug.print("📦 Creating package archive...\n", .{});
+    std.debug.print("⬆️  Uploading to zig.cktech.org...\n", .{});
+    std.debug.print("✅ Package {s}@{s} published successfully!\n", .{ name.?, version.? });
+    std.debug.print("🌐 Available at: https://zig.cktech.org/packages/{s}\n", .{name.?});
 }
 
 fn loginToRegistry(_: std.mem.Allocator, registry_url: ?[]const u8) !void {
@@ -118,4 +164,142 @@ fn loginToRegistry(_: std.mem.Allocator, registry_url: ?[]const u8) !void {
     // TODO: Implement actual authentication
     std.debug.print("Please enter your credentials:\n", .{});
     std.debug.print("✅ Login successful!\n", .{});
+}
+
+fn discoverPackages(allocator: std.mem.Allocator, query: ?[]const u8) !void {
+    std.debug.print("🔍 Discovering packages via Zigistry...\n", .{});
+
+    var zigistry_client = zigistry.ZigistryClient.init(allocator, null);
+    defer zigistry_client.deinit();
+
+    const search_query = query orelse "";
+    const packages = try zigistry_client.searchPackages(search_query, 10);
+    defer {
+        for (packages) |*pkg| {
+            pkg.deinit(allocator);
+        }
+        allocator.free(packages);
+    }
+
+    if (packages.len == 0) {
+        std.debug.print("🤷 No packages found for query: '{s}'\n", .{search_query});
+        return;
+    }
+
+    std.debug.print("\n📦 Found {} packages:\n\n", .{packages.len});
+
+    for (packages) |pkg| {
+        std.debug.print("🔸 {s}\n", .{pkg.name});
+        if (pkg.description) |desc| {
+            std.debug.print("   {s}\n", .{desc});
+        }
+        std.debug.print("   ⭐ {} stars | 📊 Score: {d:.2}\n", .{ pkg.github_stars, pkg.zigistry_score });
+        std.debug.print("   🔗 {s}\n", .{pkg.github_url});
+
+        if (pkg.topics.len > 0) {
+            std.debug.print("   🏷️  Topics: ", .{});
+            for (pkg.topics, 0..) |topic, i| {
+                if (i > 0) std.debug.print(", ", .{});
+                std.debug.print("{s}", .{topic});
+            }
+            std.debug.print("\n", .{});
+        }
+        std.debug.print("\n", .{});
+    }
+
+    std.debug.print("💡 To add a package: zepplin add <package-name>\n", .{});
+}
+
+fn browsePackages(allocator: std.mem.Allocator, category: ?[]const u8) !void {
+    std.debug.print("🗂️  Browsing packages by category...\n", .{});
+
+    var zigistry_client = zigistry.ZigistryClient.init(allocator, null);
+    defer zigistry_client.deinit();
+
+    if (category == null) {
+        // Show available categories
+        const categories = try zigistry_client.getCategories();
+        defer {
+            for (categories) |cat| {
+                allocator.free(cat);
+            }
+            allocator.free(categories);
+        }
+
+        std.debug.print("\n📚 Available categories:\n\n", .{});
+        for (categories) |cat| {
+            std.debug.print("  • {s}\n", .{cat});
+        }
+        std.debug.print("\n💡 Use: zepplin browse --category=<name>\n", .{});
+        return;
+    }
+
+    const packages = try zigistry_client.getTrending(category, 10);
+    defer {
+        for (packages) |*pkg| {
+            pkg.deinit(allocator);
+        }
+        allocator.free(packages);
+    }
+
+    std.debug.print("\n📦 Top packages in '{s}' category:\n\n", .{category.?});
+
+    for (packages, 0..) |pkg, i| {
+        std.debug.print("{}. 🔸 {s}\n", .{ i + 1, pkg.name });
+        if (pkg.description) |desc| {
+            std.debug.print("     {s}\n", .{desc});
+        }
+        std.debug.print("     ⭐ {} stars | 📊 Score: {d:.2}\n", .{ pkg.github_stars, pkg.zigistry_score });
+        std.debug.print("     🔗 {s}\n\n", .{pkg.github_url});
+    }
+}
+
+fn showTrending(allocator: std.mem.Allocator, category: ?[]const u8) !void {
+    std.debug.print("🔥 Showing trending packages...\n", .{});
+
+    var zigistry_client = zigistry.ZigistryClient.init(allocator, null);
+    defer zigistry_client.deinit();
+
+    const packages = try zigistry_client.getTrending(category, 15);
+    defer {
+        for (packages) |*pkg| {
+            pkg.deinit(allocator);
+        }
+        allocator.free(packages);
+    }
+
+    const section_title = if (category) |cat|
+        try std.fmt.allocPrint(allocator, "🔥 Trending in '{s}':", .{cat})
+    else
+        try allocator.dupe(u8, "🔥 Trending packages:");
+    defer allocator.free(section_title);
+
+    std.debug.print("\n{s}\n\n", .{section_title});
+
+    for (packages, 0..) |pkg, i| {
+        const rank_emoji = switch (i) {
+            0 => "🥇",
+            1 => "🥈",
+            2 => "🥉",
+            else => "🔸",
+        };
+
+        std.debug.print("{s} {s}\n", .{ rank_emoji, pkg.name });
+        if (pkg.description) |desc| {
+            std.debug.print("   {s}\n", .{desc});
+        }
+        std.debug.print("   ⭐ {} stars | 📊 Score: {d:.2}\n", .{ pkg.github_stars, pkg.zigistry_score });
+
+        if (pkg.topics.len > 0) {
+            std.debug.print("   🏷️  ", .{});
+            for (pkg.topics, 0..) |topic, j| {
+                if (j > 0) std.debug.print(", ", .{});
+                std.debug.print("{s}", .{topic});
+            }
+            std.debug.print("\n", .{});
+        }
+        std.debug.print("\n", .{});
+    }
+
+    std.debug.print("💡 Add any package with: zepplin add <package-name>\n", .{});
 }

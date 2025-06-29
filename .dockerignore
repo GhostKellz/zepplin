@@ -1,0 +1,40 @@
+# Build artifacts
+.zig-cache/
+zig-out/
+
+# Development files
+.git/
+.github/
+*.md
+dev.sh
+
+# Test files
+test_*
+
+# Data directories
+data/
+logs/
+
+# IDE files
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.*
+
+# Documentation (except core docs)
+docs/
+HOWTO_*.md
+*_DOCS.md
+*_INTEGRATION.md
+*_MIGRATION.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*~

@@ -42,6 +42,9 @@ zepplin build              # Run zig build + dependency resolution
 zepplin publish            # Package and push to the registry
 zepplin login [registry]   # Authenticate with your registry
 zepplin serve [port]       # Start the registry server (default: 8080)
+zepplin discover [query]   # Discover packages via Zigistry
+zepplin browse             # Browse packages by category
+zepplin trending           # Show trending packages
 ```
 
 ---
@@ -57,6 +60,8 @@ Zepplin includes a built-in registry server with a beautiful web interface:
 - **🔐 Authentication** - Secure package publishing
 - **🚀 RESTful API** - Full API for programmatic access
 - **📦 Package Management** - Upload, version, and manage packages
+- **🔍 Zigistry Integration** - Discover trending and popular Zig packages
+- **⚡ SQLite Backend** - Fast, reliable persistent storage
 
 ### Web Interface
 Visit `http://localhost:8080` after starting the server to access the web interface with:
@@ -67,11 +72,14 @@ Visit `http://localhost:8080` after starting the server to access the web interf
 
 ### API Endpoints
 ```
-GET  /                     # Web interface
-GET  /api/packages         # List all packages
-GET  /api/packages/{name}  # Get package details
-POST /api/packages         # Publish a package (requires auth)
-GET  /api/search?q={query} # Search packages
+GET  /                           # Web interface
+GET  /api/packages               # List all packages
+GET  /api/packages/{name}        # Get package details
+POST /api/packages               # Publish a package (requires auth)
+GET  /api/search?q={query}       # Search packages
+GET  /api/zigistry/discover?q=*  # Discover packages via Zigistry
+GET  /api/zigistry/trending      # Get trending packages
+GET  /api/zigistry/browse?cat=*  # Browse packages by category
 ```
 
 ---
@@ -226,7 +234,19 @@ MIT
 
 ---
 
+## 📚 Documentation
+
+- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Complete production deployment with nginx
+- **[Project Completion](PROJECT_COMPLETION.md)** - Summary of features and implementation
+- **[SQLite Integration](SQLITE_INTEGRATION.md)** - Database implementation details
+- **[Zigistry Integration](ZIGISTRY_INTEGRATION.md)** - Package discovery features
+- **[Database Migration](DATABASE_MIGRATION.md)** - Migration from zqlite to SQLite
+
+---
+
 > Made with Zig ⚡ | Inspired by Cargo & Kellnr 🚀 | Built for hackers 🛠️
 
 **Zepplin** brings the best of Rust's Cargo and private registry hosting to the Zig ecosystem, providing developers with a complete solution for package management and distribution.
+
+**🎉 Production Ready**: Complete SQLite backend, Zigistry integration, Docker deployment, and nginx configuration included!
 
