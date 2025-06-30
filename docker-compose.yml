@@ -3,30 +3,65 @@ version: '3.8'
 services:
   zepplin:
     build: .
-    ports:
-      - "${ZEPPLIN_PORT:-8080}:8080"
+    container_name: zepplin-registry
+    restart: unless-stopped
+    # Don't expose ports directly - nginx proxy will handle this
+    expose:
+      - "8080"
     volumes:
-      - zepplin-data:/app/data
+      - zepplin_data:/app/data
+      - zepplin_packages:/app/packages
+      - ./backups:/app/backups:ro
     environment:
-      - ZIG_ENV=production
       - ZEPPLIN_DATA_DIR=/app/data
-      - ZEPPLIN_LOG_LEVEL=info
+      - ZEPPLIN_PORT=8080
+      - ZEPPLIN_DOMAIN=${ZEPPLIN_DOMAIN:-zig.cktech.org}
+      - ZEPPLIN_REGISTRY_NAME=${ZEPPLIN_REGISTRY_NAME:-CKTech Zig Registry}
+      - ZEPPLIN_LOG_LEVEL=${ZEPPLIN_LOG_LEVEL:-info}
+      - ZEPPLIN_MAX_PACKAGE_SIZE=${ZEPPLIN_MAX_PACKAGE_SIZE:-50MB}
+      - ZEPPLIN_ENABLE_WASM=${ZEPPLIN_ENABLE_WASM:-true}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 10s
-    restart: unless-stopped
+      start_period: 40s
     networks:
       - zepplin-network
+    labels:
+      - "com.docker.compose.service=zepplin-registry"
+      - "org.label-schema.description=CKTech Zig Package Registry"
 
-volumes:
-  zepplin-data:
-    driver: local
-    name: zepplin-data
+  # Optional: Database backup service
+  backup:
+    image: alpine:3.19
+    container_name: zepplin-backup
+    restart: "no"
+    volumes:
+      - zepplin_data:/data:ro
+      - ./backups:/backups
+    command: |
+      sh -c '
+        apk add --no-cache sqlite
+        DATE=$$(date +%Y%m%d_%H%M%S)
+        sqlite3 /data/zepplin.db ".backup /backups/zepplin_$$DATE.db"
+        find /backups -name "zepplin_*.db" -mtime +7 -delete
+        echo "Backup completed: zepplin_$$DATE.db"
+      '
+    depends_on:
+      - zepplin
+    networks:
+      - zepplin-network
 
 networks:
   zepplin-network:
     driver: bridge
     name: zepplin-network
+
+volumes:
+  zepplin_data:
+    driver: local
+    name: zepplin_data
+  zepplin_packages:
+    driver: local
+    name: zepplin_packages

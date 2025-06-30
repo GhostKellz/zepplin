@@ -74,6 +74,42 @@ pub const RegistryConfig = struct {
     auth_token: ?[]const u8 = null,
 };
 
+/// Search result for package queries
+pub const SearchResult = struct {
+    name: []const u8,
+    description: ?[]const u8,
+    version: ?[]const u8,
+    author: ?[]const u8,
+    owner: ?[]const u8,
+    repo: ?[]const u8,
+    license: ?[]const u8,
+    repository: ?[]const u8,
+    topics: ?[][]const u8,
+    github_stars: ?u32,
+    latest_version: ?[]const u8,
+    created_at: ?i64,
+    updated_at: ?i64,
+    download_count: ?u64,
+    
+    pub fn deinit(self: *SearchResult, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        if (self.description) |desc| allocator.free(desc);
+        if (self.version) |ver| allocator.free(ver);
+        if (self.author) |auth| allocator.free(auth);
+        if (self.owner) |own| allocator.free(own);
+        if (self.repo) |r| allocator.free(r);
+        if (self.license) |lic| allocator.free(lic);
+        if (self.repository) |repo| allocator.free(repo);
+        if (self.topics) |topics| {
+            for (topics) |topic| {
+                allocator.free(topic);
+            }
+            allocator.free(topics);
+        }
+        if (self.latest_version) |ver| allocator.free(ver);
+    }
+};
+
 /// API response wrapper
 pub fn ApiResponse(comptime T: type) type {
     return struct {

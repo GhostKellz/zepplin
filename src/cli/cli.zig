@@ -168,7 +168,7 @@ fn loginToRegistry(_: std.mem.Allocator, registry_url: ?[]const u8) !void {
 
 fn discoverPackages(allocator: std.mem.Allocator, query: ?[]const u8) !void {
     std.debug.print("🔍 Discovering packages via Zigistry...\n", .{});
-
+    
     var zigistry_client = zigistry.ZigistryClient.init(allocator, null);
     defer zigistry_client.deinit();
 
@@ -195,7 +195,7 @@ fn discoverPackages(allocator: std.mem.Allocator, query: ?[]const u8) !void {
         }
         std.debug.print("   ⭐ {} stars | 📊 Score: {d:.2}\n", .{ pkg.github_stars, pkg.zigistry_score });
         std.debug.print("   🔗 {s}\n", .{pkg.github_url});
-
+        
         if (pkg.topics.len > 0) {
             std.debug.print("   🏷️  Topics: ", .{});
             for (pkg.topics, 0..) |topic, i| {
@@ -212,7 +212,7 @@ fn discoverPackages(allocator: std.mem.Allocator, query: ?[]const u8) !void {
 
 fn browsePackages(allocator: std.mem.Allocator, category: ?[]const u8) !void {
     std.debug.print("🗂️  Browsing packages by category...\n", .{});
-
+    
     var zigistry_client = zigistry.ZigistryClient.init(allocator, null);
     defer zigistry_client.deinit();
 
@@ -256,7 +256,7 @@ fn browsePackages(allocator: std.mem.Allocator, category: ?[]const u8) !void {
 
 fn showTrending(allocator: std.mem.Allocator, category: ?[]const u8) !void {
     std.debug.print("🔥 Showing trending packages...\n", .{});
-
+    
     var zigistry_client = zigistry.ZigistryClient.init(allocator, null);
     defer zigistry_client.deinit();
 
@@ -268,9 +268,9 @@ fn showTrending(allocator: std.mem.Allocator, category: ?[]const u8) !void {
         allocator.free(packages);
     }
 
-    const section_title = if (category) |cat|
+    const section_title = if (category) |cat| 
         try std.fmt.allocPrint(allocator, "🔥 Trending in '{s}':", .{cat})
-    else
+    else 
         try allocator.dupe(u8, "🔥 Trending packages:");
     defer allocator.free(section_title);
 
@@ -279,7 +279,7 @@ fn showTrending(allocator: std.mem.Allocator, category: ?[]const u8) !void {
     for (packages, 0..) |pkg, i| {
         const rank_emoji = switch (i) {
             0 => "🥇",
-            1 => "🥈",
+            1 => "🥈", 
             2 => "🥉",
             else => "🔸",
         };
@@ -289,7 +289,7 @@ fn showTrending(allocator: std.mem.Allocator, category: ?[]const u8) !void {
             std.debug.print("   {s}\n", .{desc});
         }
         std.debug.print("   ⭐ {} stars | 📊 Score: {d:.2}\n", .{ pkg.github_stars, pkg.zigistry_score });
-
+        
         if (pkg.topics.len > 0) {
             std.debug.print("   🏷️  ", .{});
             for (pkg.topics, 0..) |topic, j| {

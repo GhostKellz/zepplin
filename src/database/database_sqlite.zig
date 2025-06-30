@@ -38,43 +38,107 @@ pub const Database = struct {
     }
 
     fn createTables(self: *Database) !void {
+        // Core packages table - updated for multi-version support
         const sql_packages =
             \\CREATE TABLE IF NOT EXISTS packages (
-            \\  name TEXT PRIMARY KEY,
-            \\  version TEXT NOT NULL,
+            \\  owner TEXT NOT NULL,
+            \\  repo TEXT NOT NULL,
             \\  description TEXT,
-            \\  author TEXT,
+            \\  topics TEXT,
             \\  license TEXT,
-            \\  repository TEXT,
-            \\  dependencies TEXT,
-            \\  file_path TEXT,
-            \\  file_size INTEGER,
-            \\  checksum TEXT,
+            \\  homepage TEXT,
+            \\  github_url TEXT,
+            \\  github_stars INTEGER DEFAULT 0,
             \\  created_at INTEGER,
             \\  updated_at INTEGER,
-            \\  source TEXT DEFAULT 'zepplin_registry'
+            \\  is_private INTEGER DEFAULT 0,
+            \\  PRIMARY KEY (owner, repo)
             \\)
         ;
 
+        // Package releases (versions/tags)
+        const sql_releases =
+            \\CREATE TABLE IF NOT EXISTS releases (
+            \\  id INTEGER PRIMARY KEY AUTOINCREMENT,
+            \\  owner TEXT NOT NULL,
+            \\  repo TEXT NOT NULL,
+            \\  tag_name TEXT NOT NULL,
+            \\  name TEXT,
+            \\  body TEXT,
+            \\  draft INTEGER DEFAULT 0,
+            \\  prerelease INTEGER DEFAULT 0,
+            \\  created_at INTEGER,
+            \\  published_at INTEGER,
+            \\  tarball_url TEXT,
+            \\  zipball_url TEXT,
+            \\  download_url TEXT,
+            \\  file_size INTEGER DEFAULT 0,
+            \\  sha256 TEXT,
+            \\  FOREIGN KEY (owner, repo) REFERENCES packages(owner, repo),
+            \\  UNIQUE (owner, repo, tag_name)
+            \\)
+        ;
+
+        // Package aliases and short names
+        const sql_aliases =
+            \\CREATE TABLE IF NOT EXISTS aliases (
+            \\  short_name TEXT PRIMARY KEY,
+            \\  owner TEXT NOT NULL,
+            \\  repo TEXT NOT NULL,
+            \\  created_at INTEGER,
+            \\  created_by TEXT,
+            \\  FOREIGN KEY (owner, repo) REFERENCES packages(owner, repo)
+            \\)
+        ;
+
+        // Organizations
+        const sql_organizations =
+            \\CREATE TABLE IF NOT EXISTS organizations (
+            \\  name TEXT PRIMARY KEY,
+            \\  display_name TEXT,
+            \\  description TEXT,
+            \\  avatar_url TEXT,
+            \\  website TEXT,
+            \\  created_at INTEGER
+            \\)
+        ;
+
+        // Users table - enhanced
         const sql_users =
             \\CREATE TABLE IF NOT EXISTS users (
             \\  username TEXT PRIMARY KEY,
             \\  email TEXT UNIQUE,
             \\  password_hash TEXT NOT NULL,
             \\  api_token TEXT UNIQUE,
+            \\  ed25519_public_key TEXT,
             \\  created_at INTEGER,
-            \\  is_active INTEGER DEFAULT 1
+            \\  is_active INTEGER DEFAULT 1,
+            \\  is_admin INTEGER DEFAULT 0
             \\)
         ;
 
+        // Download statistics
         const sql_download_stats =
             \\CREATE TABLE IF NOT EXISTS download_stats (
-            \\  package_name TEXT PRIMARY KEY,
+            \\  owner TEXT NOT NULL,
+            \\  repo TEXT NOT NULL,
+            \\  tag_name TEXT,
             \\  download_count INTEGER DEFAULT 0,
-            \\  last_downloaded INTEGER
+            \\  last_downloaded INTEGER,
+            \\  PRIMARY KEY (owner, repo, tag_name)
             \\)
         ;
 
+        // Registry configuration
+        const sql_registry_config =
+            \\CREATE TABLE IF NOT EXISTS registry_config (
+            \\  key TEXT PRIMARY KEY,
+            \\  value TEXT,
+            \\  updated_at INTEGER
+            \\)
+        ;
+
+        // Zigistry cache
         const sql_zigistry_cache =
             \\CREATE TABLE IF NOT EXISTS zigistry_cache (
             \\  name TEXT PRIMARY KEY,
@@ -90,6 +154,7 @@ pub const Database = struct {
             \\)
         ;
 
+        // Search results cache
         const sql_search_results =
             \\CREATE TABLE IF NOT EXISTS search_results_cache (
             \\  query_hash TEXT PRIMARY KEY,
@@ -99,11 +164,28 @@ pub const Database = struct {
             \\)
         ;
 
+        // Execute all table creation statements
         try self.execute(sql_packages);
+        try self.execute(sql_releases);
+        try self.execute(sql_aliases);
+        try self.execute(sql_organizations);
         try self.execute(sql_users);
         try self.execute(sql_download_stats);
+        try self.execute(sql_registry_config);
         try self.execute(sql_zigistry_cache);
         try self.execute(sql_search_results);
+
+        // Create indexes for performance
+        try self.execute("CREATE INDEX IF NOT EXISTS idx_releases_owner_repo ON releases(owner, repo)");
+        try self.execute("CREATE INDEX IF NOT EXISTS idx_releases_published_at ON releases(published_at DESC)");
+        try self.execute("CREATE INDEX IF NOT EXISTS idx_packages_updated_at ON packages(updated_at DESC)");
+        try self.execute("CREATE INDEX IF NOT EXISTS idx_download_stats_count ON download_stats(download_count DESC)");
+
+        // Insert default registry configuration
+        try self.execute("INSERT OR IGNORE INTO registry_config (key, value, updated_at) VALUES ('registry_name', 'Zepplin Registry', strftime('%s', 'now'))");
+        try self.execute("INSERT OR IGNORE INTO registry_config (key, value, updated_at) VALUES ('registry_url', 'http://localhost:8080', strftime('%s', 'now'))");
+        try self.execute("INSERT OR IGNORE INTO registry_config (key, value, updated_at) VALUES ('api_version', 'v1', strftime('%s', 'now'))");
+        try self.execute("INSERT OR IGNORE INTO registry_config (key, value, updated_at) VALUES ('allow_public_publish', '1', strftime('%s', 'now'))");
     }
 
     fn execute(self: *Database, sql: []const u8) !void {
@@ -315,266 +397,41 @@ pub const Database = struct {
         return packages.toOwnedSlice();
     }
 
-    pub fn searchPackages(self: *Database, query: []const u8, limit: ?usize) ![]types.PackageMetadata {
-        if (self.db == null) {
-            // Fallback to mock data search
-            const all_packages = try self.getMockPackages();
-            defer {
-                for (all_packages) |pkg| {
-                    self.allocator.free(pkg.name);
-                    if (pkg.description) |desc| self.allocator.free(desc);
-                    if (pkg.author) |author| self.allocator.free(author);
-                    if (pkg.license) |license| self.allocator.free(license);
-                    if (pkg.repository) |repo| self.allocator.free(repo);
-                }
-                self.allocator.free(all_packages);
-            }
+    // GitHub-compatible API methods
 
-            var results = std.ArrayList(types.PackageMetadata).init(self.allocator);
-            for (all_packages) |pkg| {
-                if (std.mem.indexOf(u8, pkg.name, query) != null or
-                    (pkg.description != null and std.mem.indexOf(u8, pkg.description.?, query) != null))
-                {
-                    try results.append(types.PackageMetadata{
-                        .name = try self.allocator.dupe(u8, pkg.name),
-                        .version = pkg.version,
-                        .description = if (pkg.description) |desc| try self.allocator.dupe(u8, desc) else null,
-                        .author = if (pkg.author) |author| try self.allocator.dupe(u8, author) else null,
-                        .license = if (pkg.license) |license| try self.allocator.dupe(u8, license) else null,
-                        .repository = if (pkg.repository) |repo| try self.allocator.dupe(u8, repo) else null,
-                        .dependencies = &[_]types.Dependency{},
-                    });
-                }
-            }
-            return results.toOwnedSlice();
-        }
+    // Package operations
+    pub fn addPackageGitHub(self: *Database, package: types.Package) !void {
+        const topics_json = try self.serializeTopics(package.topics);
+        defer self.allocator.free(topics_json);
 
         const sql = try std.fmt.allocPrint(self.allocator,
-            \\SELECT name, version, description, author, license, repository 
-            \\FROM packages 
-            \\WHERE name LIKE '%{s}%' OR description LIKE '%{s}%' 
-            \\LIMIT {d}
-        , .{ query, query, limit orelse 20 });
-        defer self.allocator.free(sql);
-
-        // For now, just return all packages that match in memory
-        return self.listPackages(limit, null);
-    }
-
-    pub fn removePackage(self: *Database, name: []const u8) !void {
-        const sql = try std.fmt.allocPrint(self.allocator, "DELETE FROM packages WHERE name = '{s}'", .{name});
-        defer self.allocator.free(sql);
-        try self.execute(sql);
-    }
-
-    // User operations
-    pub fn createUser(self: *Database, username: []const u8, email: []const u8, password_hash: []const u8, api_token: []const u8) !void {
-        const sql = try std.fmt.allocPrint(self.allocator, "INSERT INTO users (username, email, password_hash, api_token, created_at) VALUES ('{s}', '{s}', '{s}', '{s}', {d})", .{ username, email, password_hash, api_token, std.time.timestamp() });
-        defer self.allocator.free(sql);
-        try self.execute(sql);
-    }
-
-    pub fn getUserByToken(self: *Database, token: []const u8) !?[]const u8 {
-        if (self.db == null) {
-            // Mock implementation for now
-            if (std.mem.eql(u8, token, "test-token")) {
-                return try self.allocator.dupe(u8, "testuser");
-            }
-            return null;
-        }
-
-        const sql = try std.fmt.allocPrint(self.allocator, "SELECT username FROM users WHERE api_token = '{s}' AND is_active = 1", .{token});
-        defer self.allocator.free(sql);
-
-        const sql_z = try self.allocator.dupeZ(u8, sql);
-        defer self.allocator.free(sql_z);
-
-        var stmt: ?*c.sqlite3_stmt = null;
-        var result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
-        if (result != c.SQLITE_OK) return null;
-        defer _ = c.sqlite3_finalize(stmt);
-
-        result = c.sqlite3_step(stmt);
-        if (result != c.SQLITE_ROW) return null;
-
-        const username_cstr = c.sqlite3_column_text(stmt, 0);
-        if (username_cstr == null) return null;
-
-        const username_str = std.mem.span(@as([*:0]const u8, @ptrCast(username_cstr)));
-        return try self.allocator.dupe(u8, username_str);
-    }
-
-    pub fn getUserByUsername(self: *Database, username: []const u8) !?[]const u8 {
-        if (self.db == null) {
-            // Mock implementation for now
-            if (std.mem.eql(u8, username, "testuser")) {
-                return try self.allocator.dupe(u8, "mock-hash");
-            }
-            return null;
-        }
-
-        const sql = try std.fmt.allocPrint(self.allocator, "SELECT password_hash FROM users WHERE username = '{s}' AND is_active = 1", .{username});
-        defer self.allocator.free(sql);
-
-        const sql_z = try self.allocator.dupeZ(u8, sql);
-        defer self.allocator.free(sql_z);
-
-        var stmt: ?*c.sqlite3_stmt = null;
-        var result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
-        if (result != c.SQLITE_OK) return null;
-        defer _ = c.sqlite3_finalize(stmt);
-
-        result = c.sqlite3_step(stmt);
-        if (result != c.SQLITE_ROW) return null;
-
-        const hash_cstr = c.sqlite3_column_text(stmt, 0);
-        if (hash_cstr == null) return null;
-
-        const hash_str = std.mem.span(@as([*:0]const u8, @ptrCast(hash_cstr)));
-        return try self.allocator.dupe(u8, hash_str);
-    }
-
-    // Stats operations
-    pub fn incrementDownloadCount(self: *Database, package_name: []const u8) !void {
-        const sql = try std.fmt.allocPrint(self.allocator,
-            \\INSERT OR REPLACE INTO download_stats (package_name, download_count, last_downloaded)
-            \\VALUES ('{s}', 
-            \\        COALESCE((SELECT download_count FROM download_stats WHERE package_name = '{s}'), 0) + 1, 
-            \\        {d})
-        , .{ package_name, package_name, std.time.timestamp() });
-        defer self.allocator.free(sql);
-        try self.execute(sql);
-    }
-
-    pub fn getDownloadCount(self: *Database, package_name: []const u8) !u64 {
-        if (self.db == null) {
-            // Mock implementation
-            if (std.mem.eql(u8, package_name, "zcrypto")) return 342;
-            if (std.mem.eql(u8, package_name, "xev")) return 1247;
-            return 42;
-        }
-
-        const sql = try std.fmt.allocPrint(self.allocator, "SELECT download_count FROM download_stats WHERE package_name = '{s}'", .{package_name});
-        defer self.allocator.free(sql);
-
-        const sql_z = try self.allocator.dupeZ(u8, sql);
-        defer self.allocator.free(sql_z);
-
-        var stmt: ?*c.sqlite3_stmt = null;
-        var result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
-        if (result != c.SQLITE_OK) return 0;
-        defer _ = c.sqlite3_finalize(stmt);
-
-        result = c.sqlite3_step(stmt);
-        if (result != c.SQLITE_ROW) return 0;
-
-        return @intCast(c.sqlite3_column_int64(stmt, 0));
-    }
-
-    pub fn getTotalPackages(self: *Database) !u64 {
-        if (self.db == null) return 4; // Mock implementation
-
-        const sql = "SELECT COUNT(*) FROM packages";
-        const sql_z = try self.allocator.dupeZ(u8, sql);
-        defer self.allocator.free(sql_z);
-
-        var stmt: ?*c.sqlite3_stmt = null;
-        var result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
-        if (result != c.SQLITE_OK) return 4;
-        defer _ = c.sqlite3_finalize(stmt);
-
-        result = c.sqlite3_step(stmt);
-        if (result != c.SQLITE_ROW) return 4;
-
-        return @intCast(c.sqlite3_column_int64(stmt, 0));
-    }
-
-    pub fn getTotalDownloads(self: *Database) !u64 {
-        if (self.db == null) return 2847; // Mock implementation
-
-        const sql = "SELECT COALESCE(SUM(download_count), 0) FROM download_stats";
-        const sql_z = try self.allocator.dupeZ(u8, sql);
-        defer self.allocator.free(sql_z);
-
-        var stmt: ?*c.sqlite3_stmt = null;
-        var result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
-        if (result != c.SQLITE_OK) return 2847;
-        defer _ = c.sqlite3_finalize(stmt);
-
-        result = c.sqlite3_step(stmt);
-        if (result != c.SQLITE_ROW) return 2847;
-
-        return @intCast(c.sqlite3_column_int64(stmt, 0));
-    }
-
-    // Stats structure for web UI
-    pub const Stats = struct {
-        total_packages: u64,
-        downloads_today: u64,
-        total_downloads: u64,
-    };
-
-    pub fn getDownloadStats(self: *Database) !Stats {
-        const total_packages = try self.getTotalPackages();
-        const total_downloads = try self.getTotalDownloads();
-
-        return Stats{
-            .total_packages = total_packages,
-            .downloads_today = 47, // Mock data for demo - could be calculated from timestamps
-            .total_downloads = total_downloads,
-        };
-    }
-
-    // Zigistry cache operations
-    pub fn cacheZigistryPackage(self: *Database, package: anytype) !void {
-        // Serialize topics as JSON string
-        var topics_json = std.ArrayList(u8).init(self.allocator);
-        defer topics_json.deinit();
-
-        try topics_json.appendSlice("[");
-        for (package.topics, 0..) |topic, i| {
-            if (i > 0) try topics_json.appendSlice(",");
-            try topics_json.appendSlice("\"");
-            try topics_json.appendSlice(topic);
-            try topics_json.appendSlice("\"");
-        }
-        try topics_json.appendSlice("]");
-
-        const sql = try std.fmt.allocPrint(self.allocator,
-            \\INSERT OR REPLACE INTO zigistry_cache 
-            \\(name, description, github_url, github_stars, zigistry_score, topics, license, last_updated, cached_at, readme_url)
-            \\VALUES ('{s}', '{s}', '{s}', {d}, {d}, '{s}', '{s}', {d}, {d}, '{s}')
+            \\INSERT OR REPLACE INTO packages 
+            \\(owner, repo, description, topics, license, homepage, github_url, github_stars, created_at, updated_at, is_private)
+            \\VALUES ('{s}', '{s}', '{s}', '{s}', '{s}', '{s}', '{s}', {d}, {d}, {d}, {d})
         , .{
-            package.name,
+            package.owner,
+            package.repo,
             package.description orelse "",
-            package.github_url,
-            package.github_stars,
-            @as(i64, @intFromFloat(package.zigistry_score * 1000)), // Store as integer for precision
-            topics_json.items,
+            topics_json,
             package.license orelse "",
-            package.last_updated,
-            std.time.timestamp(),
-            package.readme_url orelse "",
+            package.homepage orelse "",
+            package.github_url orelse "",
+            package.github_stars,
+            package.created_at,
+            package.updated_at,
+            if (package.is_private) 1 else 0,
         });
         defer self.allocator.free(sql);
 
         try self.execute(sql);
     }
 
-    pub fn getCachedZigistryPackage(self: *Database, name: []const u8) !?struct {
-        name: []const u8,
-        description: ?[]const u8,
-        github_url: []const u8,
-        github_stars: u32,
-        zigistry_score: f32,
-        topics: [][]const u8,
-        license: ?[]const u8,
-        last_updated: i64,
-        readme_url: ?[]const u8,
-    } {
+    pub fn getPackageGitHub(self: *Database, owner: []const u8, repo: []const u8) !?types.Package {
         if (self.db == null) return null;
 
-        const sql = try std.fmt.allocPrint(self.allocator, "SELECT name, description, github_url, github_stars, zigistry_score, topics, license, last_updated, readme_url FROM zigistry_cache WHERE name = '{s}'", .{name});
+        const sql = try std.fmt.allocPrint(self.allocator, 
+            "SELECT owner, repo, description, topics, license, homepage, github_url, github_stars, created_at, updated_at, is_private FROM packages WHERE owner = '{s}' AND repo = '{s}'", 
+            .{owner, repo});
         defer self.allocator.free(sql);
 
         const sql_z = try self.allocator.dupeZ(u8, sql);
@@ -588,59 +445,527 @@ pub const Database = struct {
         result = c.sqlite3_step(stmt);
         if (result != c.SQLITE_ROW) return null;
 
-        const name_cstr = c.sqlite3_column_text(stmt, 0);
-        const desc_cstr = c.sqlite3_column_text(stmt, 1);
-        const github_url_cstr = c.sqlite3_column_text(stmt, 2);
-        const github_stars = @as(u32, @intCast(c.sqlite3_column_int(stmt, 3)));
-        const zigistry_score = @as(f32, @floatFromInt(c.sqlite3_column_int(stmt, 4))) / 1000.0;
-        const topics_cstr = c.sqlite3_column_text(stmt, 5);
-        const license_cstr = c.sqlite3_column_text(stmt, 6);
-        const last_updated = c.sqlite3_column_int64(stmt, 7);
-        const readme_url_cstr = c.sqlite3_column_text(stmt, 8);
+        // Extract data from result
+        const owner_cstr = c.sqlite3_column_text(stmt, 0);
+        const repo_cstr = c.sqlite3_column_text(stmt, 1);
+        const desc_cstr = c.sqlite3_column_text(stmt, 2);
+        const topics_cstr = c.sqlite3_column_text(stmt, 3);
+        const license_cstr = c.sqlite3_column_text(stmt, 4);
+        const homepage_cstr = c.sqlite3_column_text(stmt, 5);
+        const github_url_cstr = c.sqlite3_column_text(stmt, 6);
+        const github_stars = @as(u32, @intCast(c.sqlite3_column_int(stmt, 7)));
+        const created_at = c.sqlite3_column_int64(stmt, 8);
+        const updated_at = c.sqlite3_column_int64(stmt, 9);
+        const is_private = c.sqlite3_column_int(stmt, 10) != 0;
 
-        if (name_cstr == null or github_url_cstr == null) return null;
+        if (owner_cstr == null or repo_cstr == null) return null;
 
-        // Parse topics JSON (simplified - just split by commas for now)
-        var topics = std.ArrayList([]const u8).init(self.allocator);
-        if (topics_cstr != null) {
-            const topics_str = std.mem.span(@as([*:0]const u8, @ptrCast(topics_cstr)));
-            // TODO: Proper JSON parsing - for now just return empty array
-            _ = topics_str;
-        }
+        const owner_str = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(owner_cstr))));
+        const repo_str = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(repo_cstr))));
 
-        return .{
-            .name = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(name_cstr)))),
+        const topics = if (topics_cstr != null) 
+            try self.deserializeTopics(std.mem.span(@as([*:0]const u8, @ptrCast(topics_cstr))))
+        else 
+            @as([][]const u8, &[_][]const u8{});
+
+        return types.Package{
+            .owner = owner_str,
+            .repo = repo_str,
             .description = if (desc_cstr != null)
                 try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(desc_cstr))))
             else
                 null,
-            .github_url = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(github_url_cstr)))),
-            .github_stars = github_stars,
-            .zigistry_score = zigistry_score,
-            .topics = try topics.toOwnedSlice(),
+            .topics = topics,
             .license = if (license_cstr != null)
                 try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(license_cstr))))
             else
                 null,
-            .last_updated = last_updated,
-            .readme_url = if (readme_url_cstr != null)
-                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(readme_url_cstr))))
+            .homepage = if (homepage_cstr != null)
+                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(homepage_cstr))))
+            else
+                null,
+            .github_url = if (github_url_cstr != null)
+                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(github_url_cstr))))
+            else
+                null,
+            .github_stars = github_stars,
+            .created_at = created_at,
+            .updated_at = updated_at,
+            .is_private = is_private,
+        };
+    }
+
+    // Release operations
+    pub fn addRelease(self: *Database, release: types.Release) !u64 {
+        const sql = try std.fmt.allocPrint(self.allocator,
+            \\INSERT INTO releases 
+            \\(owner, repo, tag_name, name, body, draft, prerelease, created_at, published_at, tarball_url, zipball_url, download_url, file_size, sha256)
+            \\VALUES ('{s}', '{s}', '{s}', '{s}', '{s}', {d}, {d}, {d}, {?d}, '{s}', '{s}', '{s}', {d}, '{s}')
+        , .{
+            release.owner,
+            release.repo,
+            release.tag_name,
+            release.name orelse "",
+            release.body orelse "",
+            if (release.draft) 1 else 0,
+            if (release.prerelease) 1 else 0,
+            release.created_at,
+            release.published_at,
+            release.tarball_url orelse "",
+            release.zipball_url orelse "",
+            release.download_url orelse "",
+            release.file_size,
+            release.sha256 orelse "",
+        });
+        defer self.allocator.free(sql);
+
+        try self.execute(sql);
+
+        // Return the last inserted row ID
+        return @as(u64, @intCast(c.sqlite3_last_insert_rowid(self.db)));
+    }
+
+    pub fn getReleases(self: *Database, owner: []const u8, repo: []const u8) ![]types.Release {
+        if (self.db == null) return &[_]types.Release{};
+
+        const sql = try std.fmt.allocPrint(self.allocator, 
+            "SELECT id, owner, repo, tag_name, name, body, draft, prerelease, created_at, published_at, tarball_url, zipball_url, download_url, file_size, sha256 FROM releases WHERE owner = '{s}' AND repo = '{s}' ORDER BY published_at DESC", 
+            .{owner, repo});
+        defer self.allocator.free(sql);
+
+        var releases = std.ArrayList(types.Release).init(self.allocator);
+        defer releases.deinit();
+
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        const result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
+        if (result != c.SQLITE_OK) return &[_]types.Release{};
+        defer _ = c.sqlite3_finalize(stmt);
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const id = @as(u64, @intCast(c.sqlite3_column_int64(stmt, 0)));
+            const owner_cstr = c.sqlite3_column_text(stmt, 1);
+            const repo_cstr = c.sqlite3_column_text(stmt, 2);
+            const tag_cstr = c.sqlite3_column_text(stmt, 3);
+            const name_cstr = c.sqlite3_column_text(stmt, 4);
+            const body_cstr = c.sqlite3_column_text(stmt, 5);
+            const draft = c.sqlite3_column_int(stmt, 6) != 0;
+            const prerelease = c.sqlite3_column_int(stmt, 7) != 0;
+            const created_at = c.sqlite3_column_int64(stmt, 8);
+            const published_at_int = c.sqlite3_column_int64(stmt, 9);
+            const published_at = if (published_at_int != 0) published_at_int else null;
+            const tarball_cstr = c.sqlite3_column_text(stmt, 10);
+            const zipball_cstr = c.sqlite3_column_text(stmt, 11);
+            const download_cstr = c.sqlite3_column_text(stmt, 12);
+            const file_size = @as(u64, @intCast(c.sqlite3_column_int64(stmt, 13)));
+            const sha256_cstr = c.sqlite3_column_text(stmt, 14);
+
+            if (owner_cstr == null or repo_cstr == null or tag_cstr == null) continue;
+
+            const release = types.Release{
+                .id = id,
+                .owner = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(owner_cstr)))),
+                .repo = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(repo_cstr)))),
+                .tag_name = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(tag_cstr)))),
+                .name = if (name_cstr != null)
+                    try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(name_cstr))))
+                else
+                    null,
+                .body = if (body_cstr != null)
+                    try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(body_cstr))))
+                else
+                    null,
+                .draft = draft,
+                .prerelease = prerelease,
+                .created_at = created_at,
+                .published_at = published_at,
+                .tarball_url = if (tarball_cstr != null)
+                    try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(tarball_cstr))))
+                else
+                    null,
+                .zipball_url = if (zipball_cstr != null)
+                    try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(zipball_cstr))))
+                else
+                    null,
+                .download_url = if (download_cstr != null)
+                    try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(download_cstr))))
+                else
+                    null,
+                .file_size = file_size,
+                .sha256 = if (sha256_cstr != null)
+                    try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(sha256_cstr))))
+                else
+                    null,
+            };
+
+            try releases.append(release);
+        }
+
+        return releases.toOwnedSlice();
+    }
+
+    pub fn getRelease(self: *Database, owner: []const u8, repo: []const u8, tag: []const u8) !?types.Release {
+        if (self.db == null) return null;
+
+        const sql = try std.fmt.allocPrint(self.allocator, 
+            "SELECT id, owner, repo, tag_name, name, body, draft, prerelease, created_at, published_at, tarball_url, zipball_url, download_url, file_size, sha256 FROM releases WHERE owner = '{s}' AND repo = '{s}' AND tag_name = '{s}'", 
+            .{owner, repo, tag});
+        defer self.allocator.free(sql);
+
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        var result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
+        if (result != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        result = c.sqlite3_step(stmt);
+        if (result != c.SQLITE_ROW) return null;
+
+        const id = @as(u64, @intCast(c.sqlite3_column_int64(stmt, 0)));
+        const owner_cstr = c.sqlite3_column_text(stmt, 1);
+        const repo_cstr = c.sqlite3_column_text(stmt, 2);
+        const tag_cstr = c.sqlite3_column_text(stmt, 3);
+        const name_cstr = c.sqlite3_column_text(stmt, 4);
+        const body_cstr = c.sqlite3_column_text(stmt, 5);
+        const draft = c.sqlite3_column_int(stmt, 6) != 0;
+        const prerelease = c.sqlite3_column_int(stmt, 7) != 0;
+        const created_at = c.sqlite3_column_int64(stmt, 8);
+        const published_at_int = c.sqlite3_column_int64(stmt, 9);
+        const published_at = if (published_at_int != 0) published_at_int else null;
+        const tarball_cstr = c.sqlite3_column_text(stmt, 10);
+        const zipball_cstr = c.sqlite3_column_text(stmt, 11);
+        const download_cstr = c.sqlite3_column_text(stmt, 12);
+        const file_size = @as(u64, @intCast(c.sqlite3_column_int64(stmt, 13)));
+        const sha256_cstr = c.sqlite3_column_text(stmt, 14);
+
+        if (owner_cstr == null or repo_cstr == null or tag_cstr == null) return null;
+
+        return types.Release{
+            .id = id,
+            .owner = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(owner_cstr)))),
+            .repo = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(repo_cstr)))),
+            .tag_name = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(tag_cstr)))),
+            .name = if (name_cstr != null)
+                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(name_cstr))))
+            else
+                null,
+            .body = if (body_cstr != null)
+                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(body_cstr))))
+            else
+                null,
+            .draft = draft,
+            .prerelease = prerelease,
+            .created_at = created_at,
+            .published_at = published_at,
+            .tarball_url = if (tarball_cstr != null)
+                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(tarball_cstr))))
+            else
+                null,
+            .zipball_url = if (zipball_cstr != null)
+                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(zipball_cstr))))
+            else
+                null,
+            .download_url = if (download_cstr != null)
+                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(download_cstr))))
+            else
+                null,
+            .file_size = file_size,
+            .sha256 = if (sha256_cstr != null)
+                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(sha256_cstr))))
             else
                 null,
         };
     }
 
-    pub fn cleanExpiredCache(self: *Database, max_age_seconds: i64) !void {
-        const cutoff = std.time.timestamp() - max_age_seconds;
-
-        const sql = try std.fmt.allocPrint(self.allocator, "DELETE FROM zigistry_cache WHERE cached_at < {d}", .{cutoff});
+    // Alias operations
+    pub fn addAlias(self: *Database, alias: types.Alias) !void {
+        const sql = try std.fmt.allocPrint(self.allocator,
+            \\INSERT OR REPLACE INTO aliases 
+            \\(short_name, owner, repo, created_at, created_by)
+            \\VALUES ('{s}', '{s}', '{s}', {d}, '{s}')
+        , .{
+            alias.short_name,
+            alias.owner,
+            alias.repo,
+            alias.created_at,
+            alias.created_by orelse "",
+        });
         defer self.allocator.free(sql);
 
         try self.execute(sql);
+    }
 
-        const sql2 = try std.fmt.allocPrint(self.allocator, "DELETE FROM search_results_cache WHERE expires_at < {d}", .{std.time.timestamp()});
-        defer self.allocator.free(sql2);
+    pub fn resolveAlias(self: *Database, short_name: []const u8) !?types.Alias {
+        if (self.db == null) return null;
 
-        try self.execute(sql2);
+        const sql = try std.fmt.allocPrint(self.allocator, 
+            "SELECT short_name, owner, repo, created_at, created_by FROM aliases WHERE short_name = '{s}'", 
+            .{short_name});
+        defer self.allocator.free(sql);
+
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        var result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
+        if (result != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        result = c.sqlite3_step(stmt);
+        if (result != c.SQLITE_ROW) return null;
+
+        const short_name_cstr = c.sqlite3_column_text(stmt, 0);
+        const owner_cstr = c.sqlite3_column_text(stmt, 1);
+        const repo_cstr = c.sqlite3_column_text(stmt, 2);
+        const created_at = c.sqlite3_column_int64(stmt, 3);
+        const created_by_cstr = c.sqlite3_column_text(stmt, 4);
+
+        if (short_name_cstr == null or owner_cstr == null or repo_cstr == null) return null;
+
+        return types.Alias{
+            .short_name = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(short_name_cstr)))),
+            .owner = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(owner_cstr)))),
+            .repo = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(repo_cstr)))),
+            .created_at = created_at,
+            .created_by = if (created_by_cstr != null)
+                try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(created_by_cstr))))
+            else
+                null,
+        };
+    }
+
+    // Search operations
+    pub fn searchPackages(self: *Database, query: []const u8, limit: u32) ![]types.SearchResult {
+        if (self.db == null) return &[_]types.SearchResult{};
+
+        // Simple search implementation - can be enhanced with full-text search
+        const sql = try std.fmt.allocPrint(self.allocator,
+            \\SELECT p.owner, p.repo, p.description, p.topics, p.github_stars, p.updated_at,
+            \\       COALESCE(ds.download_count, 0) as download_count
+            \\FROM packages p
+            \\LEFT JOIN download_stats ds ON p.owner = ds.owner AND p.repo = ds.repo AND ds.tag_name IS NULL
+            \\WHERE p.owner LIKE '%{s}%' OR p.repo LIKE '%{s}%' OR p.description LIKE '%{s}%' OR p.topics LIKE '%{s}%'
+            \\ORDER BY p.github_stars DESC, ds.download_count DESC
+            \\LIMIT {d}
+        , .{ query, query, query, query, limit });
+        defer self.allocator.free(sql);
+
+        var results = std.ArrayList(types.SearchResult).init(self.allocator);
+        defer results.deinit();
+
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        const result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
+        if (result != c.SQLITE_OK) return &[_]types.SearchResult{};
+        defer _ = c.sqlite3_finalize(stmt);
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const owner_cstr = c.sqlite3_column_text(stmt, 0);
+            const repo_cstr = c.sqlite3_column_text(stmt, 1);
+            const desc_cstr = c.sqlite3_column_text(stmt, 2);
+            const topics_cstr = c.sqlite3_column_text(stmt, 3);
+            const github_stars = @as(u32, @intCast(c.sqlite3_column_int(stmt, 4)));
+            const updated_at = c.sqlite3_column_int64(stmt, 5);
+            const download_count = @as(u64, @intCast(c.sqlite3_column_int64(stmt, 6)));
+
+            if (owner_cstr == null or repo_cstr == null) continue;
+
+            const topics = if (topics_cstr != null) 
+                try self.deserializeTopics(std.mem.span(@as([*:0]const u8, @ptrCast(topics_cstr))))
+            else 
+                @as([][]const u8, &[_][]const u8{});
+
+            const owner_str = std.mem.span(@as([*:0]const u8, @ptrCast(owner_cstr)));
+            const repo_str = std.mem.span(@as([*:0]const u8, @ptrCast(repo_cstr)));
+            const name = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ owner_str, repo_str });
+            
+            const search_result = types.SearchResult{
+                .name = name,
+                .owner = try self.allocator.dupe(u8, owner_str),
+                .repo = try self.allocator.dupe(u8, repo_str),
+                .description = if (desc_cstr != null)
+                    try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(desc_cstr))))
+                else
+                    null,
+                .version = null,
+                .author = null,
+                .license = null,
+                .repository = null,
+                .topics = topics,
+                .github_stars = github_stars,
+                .download_count = download_count,
+                .latest_version = null, // TODO: get from releases
+                .created_at = null,
+                .updated_at = updated_at,
+            };
+
+            try results.append(search_result);
+        }
+
+        return results.toOwnedSlice();
+    }
+
+    // Registry configuration
+    pub fn getRegistryConfig(self: *Database, key: []const u8) !?[]u8 {
+        if (self.db == null) return null;
+
+        const sql = try std.fmt.allocPrint(self.allocator, 
+            "SELECT value FROM registry_config WHERE key = '{s}'", 
+            .{key});
+        defer self.allocator.free(sql);
+
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        var result = c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null);
+        if (result != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        result = c.sqlite3_step(stmt);
+        if (result != c.SQLITE_ROW) return null;
+
+        const value_cstr = c.sqlite3_column_text(stmt, 0);
+        if (value_cstr == null) return null;
+
+        return try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(value_cstr))));
+    }
+
+    pub fn setRegistryConfig(self: *Database, key: []const u8, value: []const u8) !void {
+        const sql = try std.fmt.allocPrint(self.allocator,
+            \\INSERT OR REPLACE INTO registry_config 
+            \\(key, value, updated_at)
+            \\VALUES ('{s}', '{s}', strftime('%s', 'now'))
+        , .{ key, value });
+        defer self.allocator.free(sql);
+
+        try self.execute(sql);
+    }
+
+    // Download statistics
+    pub fn incrementDownloadCount(self: *Database, owner: []const u8, repo: []const u8, tag_name: ?[]const u8) !void {
+        const tag_clause = if (tag_name) |tag|
+            try std.fmt.allocPrint(self.allocator, "'{s}'", .{tag})
+        else
+            try self.allocator.dupe(u8, "NULL");
+        defer self.allocator.free(tag_clause);
+
+        const sql = try std.fmt.allocPrint(self.allocator,
+            \\INSERT INTO download_stats (owner, repo, tag_name, download_count, last_downloaded)
+            \\VALUES ('{s}', '{s}', {s}, 1, strftime('%s', 'now'))
+            \\ON CONFLICT(owner, repo, tag_name) DO UPDATE SET
+            \\download_count = download_count + 1,
+            \\last_downloaded = strftime('%s', 'now')
+        , .{ owner, repo, tag_clause });
+        defer self.allocator.free(sql);
+
+        try self.execute(sql);
+    }
+
+    // Download statistics methods
+    pub fn getDownloadStats(self: *Database) !struct { total_packages: u32, total_downloads: u64, downloads_today: u64 } {
+        if (self.db == null) return .{ .total_packages = 0, .total_downloads = 0, .downloads_today = 0 };
+
+        // Get total packages count
+        var total_packages: u32 = 0;
+        const packages_sql = "SELECT COUNT(*) FROM packages";
+        const packages_sql_z = try self.allocator.dupeZ(u8, packages_sql);
+        defer self.allocator.free(packages_sql_z);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        var result = c.sqlite3_prepare_v2(self.db, packages_sql_z.ptr, -1, &stmt, null);
+        if (result == c.SQLITE_OK) {
+            if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+                total_packages = @as(u32, @intCast(c.sqlite3_column_int(stmt, 0)));
+            }
+        }
+        _ = c.sqlite3_finalize(stmt);
+
+        // Get total downloads count
+        var total_downloads: u64 = 0;
+        const downloads_sql = "SELECT COALESCE(SUM(download_count), 0) FROM download_stats";
+        const downloads_sql_z = try self.allocator.dupeZ(u8, downloads_sql);
+        defer self.allocator.free(downloads_sql_z);
+
+        stmt = null;
+        result = c.sqlite3_prepare_v2(self.db, downloads_sql_z.ptr, -1, &stmt, null);
+        if (result == c.SQLITE_OK) {
+            if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+                total_downloads = @as(u64, @intCast(c.sqlite3_column_int64(stmt, 0)));
+            }
+        }
+        _ = c.sqlite3_finalize(stmt);
+
+        // Get today's downloads (simplified - would need date logic in production)
+        var downloads_today: u64 = 0;
+        const today_sql = "SELECT COALESCE(SUM(download_count), 0) FROM download_stats WHERE last_downloaded >= strftime('%s', 'now', 'start of day')";
+        const today_sql_z = try self.allocator.dupeZ(u8, today_sql);
+        defer self.allocator.free(today_sql_z);
+
+        stmt = null;
+        result = c.sqlite3_prepare_v2(self.db, today_sql_z.ptr, -1, &stmt, null);
+        if (result == c.SQLITE_OK) {
+            if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+                downloads_today = @as(u64, @intCast(c.sqlite3_column_int64(stmt, 0)));
+            }
+        }
+        _ = c.sqlite3_finalize(stmt);
+
+        return .{ .total_packages = total_packages, .total_downloads = total_downloads, .downloads_today = downloads_today };
+    }
+
+    // Helper methods for JSON serialization
+    fn serializeTopics(self: *Database, topics: [][]const u8) ![]u8 {
+        if (topics.len == 0) return self.allocator.dupe(u8, "[]");
+
+        var json = std.ArrayList(u8).init(self.allocator);
+        defer json.deinit();
+
+        try json.append('[');
+        for (topics, 0..) |topic, i| {
+            if (i > 0) try json.appendSlice(",");
+            try json.append('"');
+            try json.appendSlice(topic);
+            try json.append('"');
+        }
+        try json.append(']');
+
+        return json.toOwnedSlice();
+    }
+
+    fn deserializeTopics(self: *Database, json_str: []const u8) ![][]const u8 {
+        // Simple JSON array parsing - in production, use a proper JSON parser
+        if (std.mem.eql(u8, json_str, "[]")) return &[_][]const u8{};
+
+        var topics = std.ArrayList([]const u8).init(self.allocator);
+        defer topics.deinit();
+
+        // Very basic parsing - assumes clean JSON format
+        var in_string = false;
+        var string_start: usize = 0;
+
+        for (json_str, 0..) |char, i| {
+            switch (char) {
+                '"' => {
+                    if (!in_string) {
+                        in_string = true;
+                        string_start = i + 1;
+                    } else {
+                        in_string = false;
+                        const topic = try self.allocator.dupe(u8, json_str[string_start..i]);
+                        try topics.append(topic);
+                    }
+                },
+                else => {},
+            }
+        }
+
+        return topics.toOwnedSlice();
     }
 };

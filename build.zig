@@ -28,6 +28,11 @@ pub fn build(b: *std.Build) void {
     // addModule defines a module that we intend to make available for importing
     // to our consumers. We must give it a name because a Zig package can expose
     // module they want to access.
+    // zcrypto dependency for cryptographic operations
+    const zcrypto = b.dependency("zcrypto", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const mod = b.addModule("zepplin", .{
         // The root source file is the "entry point" of this module. Users of
@@ -83,6 +88,9 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+
+    // Add zcrypto import using the correct module name from zcrypto's build.zig
+    exe.root_module.addImport("zcrypto", zcrypto.module("zcrypto"));
 
     // Link SQLite3 system library
     exe.linkSystemLibrary("sqlite3");

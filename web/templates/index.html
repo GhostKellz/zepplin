@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zepplin - Zig Package Registry</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img">
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link active">Home</a>
+                    <a href="/packages" class="nav-link">Browse</a>
+                    <a href="/trending" class="nav-link">Trending</a>
+                    <a href="/docs" class="nav-link">Docs</a>
+                    <a href="/login" class="nav-link">Login</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="lightning">⚡</span>
+                    The Zig Package Registry
+                </h1>
+                <p class="hero-subtitle">
+                    Discover, share, and manage Zig packages with lightning speed
+                </p>
+                
+                <!-- Search Bar -->
+                <div class="search-container">
+                    <div class="search-box">
+                        <input 
+                            type="text" 
+                            id="package-search" 
+                            placeholder="Search packages... (e.g. json, http, crypto)"
+                            class="search-input"
+                        >
+                        <button class="search-btn" onclick="searchPackages()">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="m21 21-4.35-4.35"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="search-suggestions" id="search-suggestions"></div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions">
+                    <a href="/packages/trending" class="action-btn primary">
+                        🔥 Trending Packages
+                    </a>
+                    <a href="/docs/getting-started" class="action-btn secondary">
+                        📚 Getting Started
+                    </a>
+                    <a href="/publish" class="action-btn secondary">
+                        📦 Publish Package
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="stats">
+        <div class="container">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="total-packages">1,247</div>
+                    <div class="stat-label">Total Packages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="total-downloads">45.2K</div>
+                    <div class="stat-label">Downloads</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="active-maintainers">89</div>
+                    <div class="stat-label">Maintainers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="zig-version">0.14.0</div>
+                    <div class="stat-label">Latest Zig</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Featured Packages -->
+    <section class="featured">
+        <div class="container">
+            <h2 class="section-title">Featured Packages</h2>
+            <div class="package-grid" id="featured-packages">
+                <!-- Packages will be loaded dynamically -->
+            </div>
+        </div>
+    </section>
+
+    <!-- Categories -->
+    <section class="categories">
+        <div class="container">
+            <h2 class="section-title">Browse by Category</h2>
+            <div class="category-grid">
+                <a href="/packages?category=web" class="category-card">
+                    <div class="category-icon">🌐</div>
+                    <div class="category-name">Web</div>
+                    <div class="category-count">156 packages</div>
+                </a>
+                <a href="/packages?category=crypto" class="category-card">
+                    <div class="category-icon">🔐</div>
+                    <div class="category-name">Cryptography</div>
+                    <div class="category-count">89 packages</div>
+                </a>
+                <a href="/packages?category=cli" class="category-card">
+                    <div class="category-icon">⌨️</div>
+                    <div class="category-name">CLI Tools</div>
+                    <div class="category-count">203 packages</div>
+                </a>
+                <a href="/packages?category=gamedev" class="category-card">
+                    <div class="category-icon">🎮</div>
+                    <div class="category-name">Game Dev</div>
+                    <div class="category-count">67 packages</div>
+                </a>
+                <a href="/packages?category=graphics" class="category-card">
+                    <div class="category-icon">🎨</div>
+                    <div class="category-name">Graphics</div>
+                    <div class="category-count">112 packages</div>
+                </a>
+                <a href="/packages?category=database" class="category-card">
+                    <div class="category-icon">🗄️</div>
+                    <div class="category-name">Database</div>
+                    <div class="category-count">78 packages</div>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>Zepplin</h3>
+                    <p>The lightning-fast Zig package registry</p>
+                    <div class="social-links">
+                        <a href="https://github.com/zepplin/zepplin" class="social-link">GitHub</a>
+                        <a href="https://discord.gg/zig" class="social-link">Discord</a>
+                        <a href="https://twitter.com/ziglang" class="social-link">Twitter</a>
+                    </div>
+                </div>
+                <div class="footer-section">
+                    <h4>Packages</h4>
+                    <ul>
+                        <li><a href="/packages">Browse All</a></li>
+                        <li><a href="/trending">Trending</a></li>
+                        <li><a href="/categories">Categories</a></li>
+                        <li><a href="/publish">Publish</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Documentation</h4>
+                    <ul>
+                        <li><a href="/docs">Getting Started</a></li>
+                        <li><a href="/docs/api">API Reference</a></li>
+                        <li><a href="/docs/cli">CLI Usage</a></li>
+                        <li><a href="/docs/contribute">Contributing</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Community</h4>
+                    <ul>
+                        <li><a href="/blog">Blog</a></li>
+                        <li><a href="/status">Status</a></li>
+                        <li><a href="/support">Support</a></li>
+                        <li><a href="/about">About</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 Zepplin Registry. Powered by Zig.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/js/main.js"></script>
+</body>
+</html>

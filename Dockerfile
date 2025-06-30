@@ -7,9 +7,11 @@ RUN apk add --no-cache \
     xz \
     sqlite-dev \
     build-base \
+    git \
     && rm -rf /var/cache/apk/*
 
-# Install Zig 0.15.0-dev (latest development version)
+# Install Zig (latest dev build for cutting-edge features)
+# You can override this with --build-arg ZIG_VERSION=0.15.0-dev.xyz
 ARG ZIG_VERSION=0.15.0-dev.847+850655f06
 RUN curl -L "https://ziglang.org/builds/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" | tar -xJ -C /opt \
     && ln -s "/opt/zig-linux-x86_64-${ZIG_VERSION}/zig" /usr/local/bin/zig
@@ -63,6 +65,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 ENV ZIG_ENV=production
 ENV ZEPPLIN_DATA_DIR=/app/data
 ENV ZEPPLIN_LOG_LEVEL=info
+ENV ZEPPLIN_DOMAIN=zig.cktech.org
+ENV ZEPPLIN_REGISTRY_NAME="CKTech Zig Registry"
 
 # Default command - start the registry server
 CMD ["zepplin", "serve", "8080"]
