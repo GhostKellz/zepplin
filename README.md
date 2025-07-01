@@ -10,6 +10,8 @@ Zepplin is your minimal, high-performance companion for managing Zig projects an
 - ✅ Beautiful Web Interface
 - ✅ Docker Support
 
+![Zepplin Preview](assets/Zepplin_preview.png)
+
 ---
 
 ## 🚀 Quick Start
