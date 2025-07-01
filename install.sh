@@ -407,9 +407,11 @@ if systemctl is-active --quiet zepplin.service; then
     else
         print_warning "⚠️ Service is running but container may have issues. Checking logs..."
         print_status "=== Docker Compose Logs ==="
-        docker compose logs --tail=50 zepplin 2>/dev/null || echo "No container logs available"
+        docker compose logs zepplin 2>/dev/null || echo "No container logs available"
         print_status "=== Container Exit Status ==="
         docker compose ps -a --format "table {{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+        print_status "=== Container Inspection ==="
+        docker inspect zepplin-registry --format="Exit Code: {{.State.ExitCode}}, Error: {{.State.Error}}, Started: {{.State.StartedAt}}, Finished: {{.State.FinishedAt}}" 2>/dev/null || echo "Container not found"
         print_status "=== Systemd Service Logs ==="
         journalctl -u zepplin.service --no-pager -l --lines=20
     fi

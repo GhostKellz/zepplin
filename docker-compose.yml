@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   zepplin:
@@ -7,9 +7,8 @@ services:
       dockerfile: Dockerfile
     container_name: zepplin-registry
     restart: unless-stopped
-    # Don't expose ports directly - nginx proxy will handle this
-    expose:
-      - "8080"
+    ports:
+      - "8080:8080"
     volumes:
       - zepplin_data:/app/data
       - zepplin_packages:/app/packages
@@ -23,7 +22,15 @@ services:
       - ZEPPLIN_MAX_PACKAGE_SIZE=${ZEPPLIN_MAX_PACKAGE_SIZE:-50MB}
       - ZEPPLIN_ENABLE_WASM=${ZEPPLIN_ENABLE_WASM:-true}
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
