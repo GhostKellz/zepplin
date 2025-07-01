@@ -281,11 +281,49 @@ a:hover {
 .hero-subtitle {
     font-size: clamp(1.1rem, 2vw, 1.4rem);
     color: var(--text-secondary);
-    margin-bottom: 3rem;
+    margin-bottom: 1.5rem;
     max-width: 600px;
     margin-left: auto;
     margin-right: auto;
     opacity: 0.9;
+}
+
+/* Hero CK Technology Branding */
+.hero-branding {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 3rem;
+    padding: 0.75rem 1.5rem;
+    background: rgba(255, 214, 10, 0.05);
+    border: 1px solid rgba(255, 214, 10, 0.1);
+    border-radius: var(--border-radius-lg);
+    backdrop-filter: blur(10px);
+    max-width: 300px;
+    margin-left: auto;
+    margin-right: auto;
+    transition: var(--transition-base);
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+}
+
+.hero-branding:hover {
+    background: rgba(255, 214, 10, 0.08);
+    border-color: rgba(255, 214, 10, 0.2);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 214, 10, 0.1);
+}
+
+.hero-cktech-logo {
+    height: 20px;
+    width: auto;
+    filter: brightness(0.9);
+    transition: var(--transition-fast);
+}
+
+.hero-branding:hover .hero-cktech-logo {
+    filter: brightness(1.1);
 }
 
 /* Search Container */
@@ -722,6 +760,35 @@ a:hover {
     text-align: center;
     color: var(--text-muted);
     font-size: 0.95rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+}
+
+.powered-by {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    opacity: 0.8;
+    transition: var(--transition-fast);
+}
+
+.powered-by:hover {
+    opacity: 1;
+}
+
+.cktech-logo {
+    height: 24px;
+    width: auto;
+    filter: brightness(0.8);
+    transition: var(--transition-fast);
+}
+
+.powered-by:hover .cktech-logo {
+    filter: brightness(1);
 }
 
 /* Loading Animation */

@@ -136,6 +136,20 @@ pub const Server = struct {
                 const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
                 defer self.allocator.free(file_path);
                 try self.serveStaticFile(stream, file_path);
+            } else if (std.mem.startsWith(u8, path, "/assets/")) {
+                const file_path = try std.fmt.allocPrint(self.allocator, "{s}", .{path[1..]});
+                defer self.allocator.free(file_path);
+                try self.serveStaticFile(stream, file_path);
+            } else if (std.mem.endsWith(u8, path, ".wasm")) {
+                const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
+                defer self.allocator.free(file_path);
+                try self.serveStaticFile(stream, file_path);
+            } else if (std.mem.startsWith(u8, path, "/packages") or 
+                      std.mem.startsWith(u8, path, "/search") or 
+                      std.mem.startsWith(u8, path, "/trending") or 
+                      std.mem.startsWith(u8, path, "/docs")) {
+                // SPA routes - serve index.html
+                try self.serveStaticFile(stream, "web/templates/index.html");
             } else {
                 try self.serve404(stream);
             }
@@ -185,12 +199,16 @@ pub const Server = struct {
             "text/css"
         else if (std.mem.endsWith(u8, file_path, ".js"))
             "application/javascript"
+        else if (std.mem.endsWith(u8, file_path, ".wasm"))
+            "application/wasm"
         else if (std.mem.endsWith(u8, file_path, ".svg"))
             "image/svg+xml"
         else if (std.mem.endsWith(u8, file_path, ".png"))
             "image/png"
         else if (std.mem.endsWith(u8, file_path, ".jpg") or std.mem.endsWith(u8, file_path, ".jpeg"))
             "image/jpeg"
+        else if (std.mem.endsWith(u8, file_path, ".ico"))
+            "image/x-icon"
         else
             "application/octet-stream";
 
