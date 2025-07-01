@@ -97,7 +97,7 @@ pub const Server = struct {
 
         if (std.mem.eql(u8, method, "GET")) {
             if (std.mem.eql(u8, path, "/")) {
-                try self.serveWebUI(stream);
+                try self.serveStaticFile(stream, "web/templates/index.html");
             } else if (std.mem.eql(u8, path, "/health")) {
                 try self.handleHealthSimple(stream);
                 // GitHub-compatible API v1 endpoints
@@ -111,6 +111,8 @@ pub const Server = struct {
                 try self.handleRegistryConfigV1(stream);
             } else if (std.mem.eql(u8, path, "/api/v1/health")) {
                 try self.handleHealthV1(stream);
+            } else if (std.mem.eql(u8, path, "/api/v1/stats")) {
+                try self.handleStatsApi(stream);
                 // Legacy API endpoints (backward compatibility)
             } else if (std.mem.startsWith(u8, path, "/api/packages")) {
                 try self.handlePackageApi(stream, path);
@@ -122,6 +124,18 @@ pub const Server = struct {
                 try self.handleZigistryTrending(stream, path);
             } else if (std.mem.startsWith(u8, path, "/api/zigistry/browse")) {
                 try self.handleZigistryBrowse(stream, path);
+            } else if (std.mem.startsWith(u8, path, "/css/")) {
+                const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
+                defer self.allocator.free(file_path);
+                try self.serveStaticFile(stream, file_path);
+            } else if (std.mem.startsWith(u8, path, "/js/")) {
+                const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
+                defer self.allocator.free(file_path);
+                try self.serveStaticFile(stream, file_path);
+            } else if (std.mem.startsWith(u8, path, "/images/")) {
+                const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
+                defer self.allocator.free(file_path);
+                try self.serveStaticFile(stream, file_path);
             } else {
                 try self.serve404(stream);
             }
@@ -150,6 +164,46 @@ pub const Server = struct {
         }
     }
 
+    fn serveStaticFile(self: *Server, stream: std.net.Stream, file_path: []const u8) !void {
+        const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
+            std.debug.print("❌ Failed to open file {s}: {}\n", .{ file_path, err });
+            try self.serve404(stream);
+            return;
+        };
+        defer file.close();
+
+        const file_size = try file.getEndPos();
+        const content = try self.allocator.alloc(u8, file_size);
+        defer self.allocator.free(content);
+
+        _ = try file.read(content);
+
+        // Determine content type based on file extension
+        const content_type = if (std.mem.endsWith(u8, file_path, ".html"))
+            "text/html"
+        else if (std.mem.endsWith(u8, file_path, ".css"))
+            "text/css"
+        else if (std.mem.endsWith(u8, file_path, ".js"))
+            "application/javascript"
+        else if (std.mem.endsWith(u8, file_path, ".svg"))
+            "image/svg+xml"
+        else if (std.mem.endsWith(u8, file_path, ".png"))
+            "image/png"
+        else if (std.mem.endsWith(u8, file_path, ".jpg") or std.mem.endsWith(u8, file_path, ".jpeg"))
+            "image/jpeg"
+        else
+            "application/octet-stream";
+
+        const response = try std.fmt.allocPrint(self.allocator, 
+            "HTTP/1.1 200 OK\r\nContent-Type: {s}\r\nContent-Length: {}\r\nCache-Control: public, max-age=3600\r\n\r\n", 
+            .{ content_type, content.len }
+        );
+        defer self.allocator.free(response);
+
+        try stream.writeAll(response);
+        try stream.writeAll(content);
+    }
+
     fn serveWebUI(self: *Server, stream: std.net.Stream) !void {
         // Get real statistics from database
         const stats = try self.database.getDownloadStats();
@@ -174,7 +228,8 @@ pub const Server = struct {
             \\        .stat-card {{ background: #1e2328; padding: 1.5rem; border-radius: 8px; text-align: center; }}
             \\        .stat-card h3 {{ color: #f7931e; font-size: 2rem; margin-bottom: 0.5rem; }}
             \\        .packages {{ background: #1e2328; border-radius: 8px; padding: 1.5rem; }}
-            \\        .package-item {{ border-bottom: 1px solid #39414a; padding: 1rem 0; }}        \\        .package-item:last-child {{ border-bottom: none; }}
+            \\        .package-item {{ border-bottom: 1px solid #39414a; padding: 1rem 0; }}
+            \\        .package-item:last-child {{ border-bottom: none; }}
             \\        .package-name {{ color: #f7931e; font-size: 1.1rem; font-weight: bold; }}
             \\        .package-version {{ color: #36c692; margin-left: 0.5rem; }}
             \\        .package-desc {{ color: #b8b4a3; margin-top: 0.5rem; }}
@@ -199,7 +254,7 @@ pub const Server = struct {
             \\        <div class="header">
             \\            <h1>⚡ Zepplin Registry</h1>
             \\            <p>Blazing-fast package registry for the Zig ecosystem</p>
-            \\            <p style="margin-top: 0.5rem; font-size: 0.9rem;">🎉 <strong>Production Ready</strong> with SQLite database, Zigistry discovery & search!</p>        \\        </div>
+            \\        </div>
             \\        
             \\        <div class="stats">
             \\            <div class="stat-card">
@@ -227,7 +282,8 @@ pub const Server = struct {
             \\        </div>
             \\        
             \\        <div class="search-results" id="searchResults"></div>
-            \\             \\        <div class="packages" id="packagesList">
+            \\        
+            \\        <div class="packages" id="packagesList">
             \\            <h2 style="margin-bottom: 1rem; color: #f7931e;">📦 Recent Packages</h2>
             \\            <div style="text-align: center; color: #b8b4a3; padding: 2rem;">
             \\                Loading packages...
@@ -1441,6 +1497,24 @@ pub const Server = struct {
         defer self.allocator.free(json_response);
 
         try self.serveJson(stream, status_code, json_response);
+    }
+
+    fn handleStatsApi(self: *Server, stream: std.net.Stream) !void {
+        const stats = try self.database.getDownloadStats();
+        
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "success": true,
+            \\  "total_packages": {},
+            \\  "total_downloads": {},
+            \\  "downloads_today": {},
+            \\  "active_maintainers": 89,
+            \\  "zig_version": "0.14.0"
+            \\}}
+        , .{ stats.total_packages, stats.total_downloads, stats.downloads_today });
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 200, json_response);
     }
 
     fn serializeStringArray(self: *Server, strings: [][]const u8) ![]u8 {
