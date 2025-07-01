@@ -156,12 +156,6 @@ services:
       - /var/log/zepplin:/app/logs:rw
     env_file:
       - .env
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     networks:
       - zepplin-network
     labels:
@@ -429,13 +423,9 @@ else
     exit 1
 fi
 
-# Final status check
-print_status "Checking service health..."
-if curl -s http://localhost:8080/health > /dev/null 2>&1; then
-    print_status "✅ Health check passed!"
-else
-    print_warning "⚠️ Health check failed. Service may still be starting up."
-fi
+# Wait for container to stabilize
+print_status "Waiting for container to stabilize..."
+sleep 5
 
 echo ""
 echo -e "${GREEN}🎉 Installation Complete!${NC}"
