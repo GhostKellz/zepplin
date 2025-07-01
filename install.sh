@@ -147,8 +147,7 @@ services:
     restart: unless-stopped
     expose:
       - "8080"
-    ports:
-      - "127.0.0.1:8080:8080"  # Only bind to localhost
+    network_mode: host
     volumes:
       - zepplin_data:/app/data
       - zepplin_packages:/app/packages
@@ -156,8 +155,6 @@ services:
       - /var/log/zepplin:/app/logs:rw
     env_file:
       - .env
-    networks:
-      - zepplin-network
     labels:
       - "com.docker.compose.service=zepplin-registry"
       - "org.label-schema.description=Zepplin Zig Package Registry"
@@ -180,15 +177,10 @@ services:
       '
     depends_on:
       - zepplin
-    networks:
-      - zepplin-network
+    network_mode: host
     profiles:
       - backup
 
-networks:
-  zepplin-network:
-    driver: bridge
-    name: zepplin-network
 
 volumes:
   zepplin_data:
