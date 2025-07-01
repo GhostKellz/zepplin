@@ -13,7 +13,7 @@ services:
     volumes:
       - zepplin_data:/app/data
       - zepplin_packages:/app/packages
-      - ./backups:/app/backups:ro
+      - /data/projects/zepplin/backups:/app/backups:ro
     environment:
       - ZEPPLIN_DATA_DIR=/app/data
       - ZEPPLIN_PORT=8080
@@ -41,7 +41,7 @@ services:
     restart: "no"
     volumes:
       - zepplin_data:/data:ro
-      - ./backups:/backups
+      - /data/projects/zepplin/backups:/backups
     command: |
       sh -c '
         apk add --no-cache sqlite
