@@ -131,6 +131,10 @@ EOF
 
 chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/.env"
 
+# Ensure docker-compose.yml is readable by root (needed for systemd service)
+chmod 644 "$INSTALL_DIR/docker-compose.yml"
+chmod 644 "$INSTALL_DIR/.env"
+
 # Update docker-compose.yml to use correct paths
 print_status "Configuring Docker Compose..."
 cat > "$INSTALL_DIR/docker-compose.yml" << 'EOF'
@@ -277,13 +281,35 @@ cat > "$INSTALL_DIR/status.sh" << 'EOF'
 #!/bin/bash
 cd "$(dirname "$0")"
 echo "=== Zepplin Registry Status ==="
-docker compose ps
+
+# Check if docker-compose.yml exists
+if [ ! -f "docker-compose.yml" ]; then
+    echo "❌ docker-compose.yml not found!"
+    exit 1
+fi
+
+# Show docker compose status
+echo "=== Docker Compose Status ==="
+docker compose ps -a
+
 echo ""
 echo "=== Container Status Details ==="
 if docker compose ps | grep -q "Up"; then
     echo "✅ Container is running"
+    
+    # Show container details
+    echo ""
+    echo "=== Container Details ==="
+    docker compose ps
+    
+    echo ""
+    echo "=== Recent Container Logs ==="
+    docker compose logs --tail=10 zepplin 2>/dev/null || echo "No logs available"
 else
     echo "❌ Container is not running"
+    echo ""
+    echo "=== All Containers (including stopped) ==="
+    docker compose ps -a
     echo ""
     echo "=== Recent Container Logs ==="
     docker compose logs --tail=20 zepplin 2>/dev/null || echo "No logs available"
@@ -291,9 +317,16 @@ else
     echo "=== Systemd Service Status ==="
     systemctl status zepplin --no-pager -l
 fi
+
 echo ""
 echo "=== Resource Usage ==="
 docker stats --no-stream zepplin-registry 2>/dev/null || echo "Container not running"
+
+echo ""
+echo "=== Files Check ==="
+echo "docker-compose.yml: $(test -f docker-compose.yml && echo "✅ exists" || echo "❌ missing")"
+echo ".env: $(test -f .env && echo "✅ exists" || echo "❌ missing")"
+echo "Dockerfile: $(test -f Dockerfile && echo "✅ exists" || echo "❌ missing")"
 EOF
 
 # Update script
@@ -323,6 +356,38 @@ chmod +x "$INSTALL_DIR"/*.sh
 # Set ownership for all created files
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 
+# Verify files were created properly
+print_status "Verifying installation files..."
+cd "$INSTALL_DIR"
+
+if [ ! -f "docker-compose.yml" ]; then
+    print_error "docker-compose.yml was not created properly!"
+    exit 1
+fi
+
+if [ ! -f ".env" ]; then
+    print_error ".env file was not created properly!"
+    exit 1
+fi
+
+if [ ! -f "Dockerfile" ]; then
+    print_error "Dockerfile not found! Make sure the repository was cloned properly."
+    exit 1
+fi
+
+print_status "All required files are present ✓"
+
+# Test docker compose configuration
+print_status "Testing Docker Compose configuration..."
+if ! docker compose config > /dev/null 2>&1; then
+    print_error "Docker Compose configuration is invalid!"
+    print_status "Showing docker compose config output:"
+    docker compose config
+    exit 1
+fi
+
+print_status "Docker Compose configuration is valid ✓"
+
 # Start the service
 print_status "Starting Zepplin Registry..."
 systemctl start zepplin.service
@@ -336,17 +401,26 @@ if systemctl is-active --quiet zepplin.service; then
     
     # Check if container is actually running
     cd "$INSTALL_DIR"
+    
+    print_status "Checking container status..."
+    docker compose ps -a
+    
     if docker compose ps | grep -q "Up"; then
         print_status "✅ Container is running!"
     else
         print_warning "⚠️ Service is running but container may have issues. Checking logs..."
-        docker compose logs --tail=20 zepplin || echo "No logs available"
+        print_status "=== Docker Compose Logs ==="
+        docker compose logs --tail=30 zepplin 2>/dev/null || echo "No container logs available"
+        print_status "=== Systemd Service Logs ==="
+        journalctl -u zepplin.service --no-pager -l --lines=20
     fi
 else
     print_error "❌ Service failed to start. Check logs with: journalctl -u zepplin.service -f"
+    print_status "=== Systemd Service Logs ==="
+    journalctl -u zepplin.service --no-pager -l --lines=20
     print_status "Attempting to get container logs..."
     cd "$INSTALL_DIR"
-    docker compose logs --tail=20 zepplin || echo "No container logs available"
+    docker compose logs --tail=20 zepplin 2>/dev/null || echo "No container logs available"
     exit 1
 fi
 

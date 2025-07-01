@@ -46,7 +46,7 @@ pub fn main() !void {
             return err;
         };
         defer registry_server.deinit();
-        
+
         std.debug.print("🌐 Starting server on port {}...\n", .{port});
         registry_server.start() catch |err| {
             std.debug.print("❌ Failed to start server: {}\n", .{err});
