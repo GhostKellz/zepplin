@@ -22,17 +22,11 @@ FROM zig-builder AS builder
 
 WORKDIR /app
 
-# Debug: List what files are available in the build context
-RUN echo "=== Build context contents ===" && ls -la /
-
 # Copy build files first for better caching
 COPY build.zig build.zig.zon ./
 
 # Copy source code
 COPY src/ ./src/
-
-# List files to debug
-RUN ls -la && ls -la src/
 
 # Build the application with optimizations
 RUN zig build -Doptimize=ReleaseFast
@@ -40,12 +34,15 @@ RUN zig build -Doptimize=ReleaseFast
 # Runtime stage - minimal Alpine with SQLite
 FROM alpine:3.19
 
-# Install runtime dependencies
+# Install runtime dependencies including SQLite development libraries
 RUN apk add --no-cache \
     sqlite \
+    sqlite-dev \
+    sqlite-libs \
     ca-certificates \
     tzdata \
     curl \
+    wget \
     && rm -rf /var/cache/apk/*
 
 # Create non-root user for security
