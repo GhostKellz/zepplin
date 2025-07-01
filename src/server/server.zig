@@ -98,18 +98,22 @@ pub const Server = struct {
         if (std.mem.eql(u8, method, "GET")) {
             if (std.mem.eql(u8, path, "/")) {
                 try self.serveWebUI(stream);
-            } else if (std.mem.startsWith(u8, path, "/css/") or 
-                      std.mem.startsWith(u8, path, "/js/") or 
-                      std.mem.startsWith(u8, path, "/images/")) {
-                try self.serveStaticFile(stream, path);
-            } else if (std.mem.startsWith(u8, path, "/packages")) {
-                try self.servePackagePage(stream, path);
-            } else if (std.mem.startsWith(u8, path, "/api/v1/packages")) {
-                try self.handlePackageApi(stream, path);
+                // GitHub-compatible API v1 endpoints
+            } else if (std.mem.startsWith(u8, path, "/api/v1/packages/")) {
+                try self.handlePackageApiV1(stream, path);
             } else if (std.mem.startsWith(u8, path, "/api/v1/search")) {
+                try self.handleSearchApiV1(stream, path);
+            } else if (std.mem.startsWith(u8, path, "/api/v1/resolve/")) {
+                try self.handleResolveApiV1(stream, path);
+            } else if (std.mem.eql(u8, path, "/api/v1/registry/config")) {
+                try self.handleRegistryConfigV1(stream);
+            } else if (std.mem.eql(u8, path, "/api/v1/health")) {
+                try self.handleHealthV1(stream);
+                // Legacy API endpoints (backward compatibility)
+            } else if (std.mem.startsWith(u8, path, "/api/packages")) {
+                try self.handlePackageApi(stream, path);
+            } else if (std.mem.startsWith(u8, path, "/api/search")) {
                 try self.handleSearchApi(stream, path);
-            } else if (std.mem.startsWith(u8, path, "/api/v1/stats")) {
-                try self.handleStatsApi(stream);
             } else if (std.mem.startsWith(u8, path, "/api/zigistry/discover")) {
                 try self.handleZigistryDiscover(stream, path);
             } else if (std.mem.startsWith(u8, path, "/api/zigistry/trending")) {
@@ -120,8 +124,22 @@ pub const Server = struct {
                 try self.serve404(stream);
             }
         } else if (std.mem.eql(u8, method, "POST")) {
-            if (std.mem.eql(u8, path, "/api/packages")) {
+            if (std.mem.startsWith(u8, path, "/api/v1/packages/")) {
+                try self.handlePublishPackageV1(stream, path);
+            } else if (std.mem.eql(u8, path, "/api/packages")) {
                 try self.handlePublishPackage(stream);
+            } else {
+                try self.serve404(stream);
+            }
+        } else if (std.mem.eql(u8, method, "PUT")) {
+            if (std.mem.startsWith(u8, path, "/api/v1/aliases/")) {
+                try self.handleCreateAliasV1(stream, path);
+            } else {
+                try self.serve404(stream);
+            }
+        } else if (std.mem.eql(u8, method, "DELETE")) {
+            if (std.mem.startsWith(u8, path, "/api/v1/packages/")) {
+                try self.handleDeletePackageV1(stream, path);
             } else {
                 try self.serve404(stream);
             }
@@ -131,22 +149,6 @@ pub const Server = struct {
     }
 
     fn serveWebUI(self: *Server, stream: std.net.Stream) !void {
-        // Read the HTML template from file
-        const template_path = "web/templates/index.html";
-        const html_content = std.fs.cwd().readFileAlloc(self.allocator, template_path, 1024 * 1024) catch |err| {
-            std.debug.print("Failed to read template file: {}\n", .{err});
-            // Fallback to basic template
-            return self.serveBasicWebUI(stream);
-        };
-        defer self.allocator.free(html_content);
-
-        const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{s}", .{ html_content.len, html_content });
-        defer self.allocator.free(response);
-
-        try stream.writeAll(response);
-    }
-
-    fn serveBasicWebUI(self: *Server, stream: std.net.Stream) !void {
         // Get real statistics from database
         const stats = try self.database.getDownloadStats();
 
@@ -171,24 +173,24 @@ pub const Server = struct {
             \\        .stat-card h3 {{ color: #f7931e; font-size: 2rem; margin-bottom: 0.5rem; }}
             \\        .packages {{ background: #1e2328; border-radius: 8px; padding: 1.5rem; }}
             \\        .package-item {{ border-bottom: 1px solid #39414a; padding: 1rem 0; }}        \\        .package-item:last-child {{ border-bottom: none; }}
-        \\        .package-name {{ color: #f7931e; font-size: 1.1rem; font-weight: bold; }}
-        \\        .package-version {{ color: #36c692; margin-left: 0.5rem; }}
-        \\        .package-desc {{ color: #b8b4a3; margin-top: 0.5rem; }}
-        \\        .footer {{ text-align: center; margin-top: 3rem; color: #b8b4a3; }}
-        \\        .search-results {{ display: none; background: #1e2328; border-radius: 8px; padding: 1rem; margin-top: 1rem; }}
-        \\        .tabs {{ display: flex; gap: 1rem; margin: 2rem 0 1rem 0; }}
-        \\        .tab {{ padding: 0.8rem 1.5rem; background: #1e2328; color: #b8b4a3; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; }}
-        \\        .tab.active {{ background: #f7931e; color: #1a1d23; font-weight: bold; }}
-        \\        .tab:hover {{ background: #36c692; color: #1a1d23; }}
-        \\        .tab-content {{ display: none; }}
-        \\        .tab-content.active {{ display: block; }}
-        \\        .zigistry-search {{ margin-bottom: 1rem; }}
-        \\        .zigistry-search input {{ width: 100%; padding: 1rem; background: #1e2328; border: 1px solid #36c692; border-radius: 8px; color: #e8e6e3; font-size: 1rem; }}
-        \\        .zigistry-results {{ margin-top: 1rem; }}
-        \\        .discover-section {{ margin: 1rem 0; }}
-        \\        .trending-btn, .browse-btn {{ padding: 0.6rem 1.2rem; background: #36c692; color: #1a1d23; border: none; border-radius: 6px; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; font-weight: bold; }}
-        \\        .trending-btn:hover, .browse-btn:hover {{ background: #f7931e; }}
-        \\    </style>
+            \\        .package-name {{ color: #f7931e; font-size: 1.1rem; font-weight: bold; }}
+            \\        .package-version {{ color: #36c692; margin-left: 0.5rem; }}
+            \\        .package-desc {{ color: #b8b4a3; margin-top: 0.5rem; }}
+            \\        .footer {{ text-align: center; margin-top: 3rem; color: #b8b4a3; }}
+            \\        .search-results {{ display: none; background: #1e2328; border-radius: 8px; padding: 1rem; margin-top: 1rem; }}
+            \\        .tabs {{ display: flex; gap: 1rem; margin: 2rem 0 1rem 0; }}
+            \\        .tab {{ padding: 0.8rem 1.5rem; background: #1e2328; color: #b8b4a3; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; }}
+            \\        .tab.active {{ background: #f7931e; color: #1a1d23; font-weight: bold; }}
+            \\        .tab:hover {{ background: #36c692; color: #1a1d23; }}
+            \\        .tab-content {{ display: none; }}
+            \\        .tab-content.active {{ display: block; }}
+            \\        .zigistry-search {{ margin-bottom: 1rem; }}
+            \\        .zigistry-search input {{ width: 100%; padding: 1rem; background: #1e2328; border: 1px solid #36c692; border-radius: 8px; color: #e8e6e3; font-size: 1rem; }}
+            \\        .zigistry-results {{ margin-top: 1rem; }}
+            \\        .discover-section {{ margin: 1rem 0; }}
+            \\        .trending-btn, .browse-btn {{ padding: 0.6rem 1.2rem; background: #36c692; color: #1a1d23; border: none; border-radius: 6px; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; font-weight: bold; }}
+            \\        .trending-btn:hover, .browse-btn:hover {{ background: #f7931e; }}
+            \\    </style>
             \\</head>
             \\<body>
             \\    <div class="container">
@@ -196,59 +198,59 @@ pub const Server = struct {
             \\            <h1>⚡ Zepplin Registry</h1>
             \\            <p>Blazing-fast package registry for the Zig ecosystem</p>
             \\            <p style="margin-top: 0.5rem; font-size: 0.9rem;">🎉 <strong>Production Ready</strong> with SQLite database, Zigistry discovery & search!</p>        \\        </div>
-        \\        
-        \\        <div class="stats">
-        \\            <div class="stat-card">
-        \\                <h3>{}</h3>
-        \\                <p>Total Packages</p>
-        \\            </div>
-        \\            <div class="stat-card">
-        \\                <h3>{}</h3>
-        \\                <p>Downloads Today</p>
-        \\            </div>
-        \\            <div class="stat-card">
-        \\                <h3>{}</h3>
-        \\                <p>Total Downloads</p>
-        \\            </div>
-        \\        </div>
-        \\        
-        \\        <div class="tabs">
-        \\            <button class="tab active" onclick="switchTab('local')">🏠 Local Packages</button>
-        \\            <button class="tab" onclick="switchTab('discover')">🔍 Discover Packages</button>
-        \\        </div>
-        \\        
-        \\        <div id="local-tab" class="tab-content active">
-        \\        <div class="search-box">
-        \\            <input type="text" placeholder="🔍 Search packages..." id="searchInput">
-        \\        </div>
-        \\        
-        \\        <div class="search-results" id="searchResults"></div>
+            \\        
+            \\        <div class="stats">
+            \\            <div class="stat-card">
+            \\                <h3>{}</h3>
+            \\                <p>Total Packages</p>
+            \\            </div>
+            \\            <div class="stat-card">
+            \\                <h3>{}</h3>
+            \\                <p>Downloads Today</p>
+            \\            </div>
+            \\            <div class="stat-card">
+            \\                <h3>{}</h3>
+            \\                <p>Total Downloads</p>
+            \\            </div>
+            \\        </div>
+            \\        
+            \\        <div class="tabs">
+            \\            <button class="tab active" onclick="switchTab('local')">🏠 Local Packages</button>
+            \\            <button class="tab" onclick="switchTab('discover')">🔍 Discover Packages</button>
+            \\        </div>
+            \\        
+            \\        <div id="local-tab" class="tab-content active">
+            \\        <div class="search-box">
+            \\            <input type="text" placeholder="🔍 Search packages..." id="searchInput">
+            \\        </div>
+            \\        
+            \\        <div class="search-results" id="searchResults"></div>
             \\             \\        <div class="packages" id="packagesList">
-        \\            <h2 style="margin-bottom: 1rem; color: #f7931e;">📦 Recent Packages</h2>
-        \\            <div style="text-align: center; color: #b8b4a3; padding: 2rem;">
-        \\                Loading packages...
-        \\            </div>
-        \\        </div>
-        \\        </div>
-        \\        
-        \\        <div id="discover-tab" class="tab-content">
-        \\            <div class="discover-section">
-        \\                <h2 style="color: #f7931e; margin-bottom: 1rem;">🌟 Quick Actions</h2>
-        \\                <button class="trending-btn" onclick="loadTrending()">🔥 Show Trending</button>
-        \\                <button class="browse-btn" onclick="loadCategory('web')">🌐 Web Frameworks</button>
-        \\                <button class="browse-btn" onclick="loadCategory('cli')">⚡ CLI Tools</button>
-        \\                <button class="browse-btn" onclick="loadCategory('gamedev')">🎮 Game Dev</button>
-        \\            </div>
-        \\            
-        \\            <div class="zigistry-search">
-        \\                <input type="text" placeholder="🔍 Discover packages from Zigistry..." id="zigistrySearchInput">
-        \\            </div>
-        \\            
-        \\            <div class="zigistry-results" id="zigistryResults">
-        \\                <h2 style="color: #f7931e; margin-bottom: 1rem;">🚀 Discover Zig Packages</h2>
-        \\                <p style="color: #b8b4a3;">Search for packages or use the quick actions above to explore the Zig ecosystem!</p>
-        \\            </div>
-        \\        </div>
+            \\            <h2 style="margin-bottom: 1rem; color: #f7931e;">📦 Recent Packages</h2>
+            \\            <div style="text-align: center; color: #b8b4a3; padding: 2rem;">
+            \\                Loading packages...
+            \\            </div>
+            \\        </div>
+            \\        </div>
+            \\        
+            \\        <div id="discover-tab" class="tab-content">
+            \\            <div class="discover-section">
+            \\                <h2 style="color: #f7931e; margin-bottom: 1rem;">🌟 Quick Actions</h2>
+            \\                <button class="trending-btn" onclick="loadTrending()">🔥 Show Trending</button>
+            \\                <button class="browse-btn" onclick="loadCategory('web')">🌐 Web Frameworks</button>
+            \\                <button class="browse-btn" onclick="loadCategory('cli')">⚡ CLI Tools</button>
+            \\                <button class="browse-btn" onclick="loadCategory('gamedev')">🎮 Game Dev</button>
+            \\            </div>
+            \\            
+            \\            <div class="zigistry-search">
+            \\                <input type="text" placeholder="🔍 Discover packages from Zigistry..." id="zigistrySearchInput">
+            \\            </div>
+            \\            
+            \\            <div class="zigistry-results" id="zigistryResults">
+            \\                <h2 style="color: #f7931e; margin-bottom: 1rem;">🚀 Discover Zig Packages</h2>
+            \\                <p style="color: #b8b4a3;">Search for packages or use the quick actions above to explore the Zig ecosystem!</p>
+            \\            </div>
+            \\        </div>
             \\        
             \\        <div class="footer">
             \\            <p>Made with Zig ⚡ | Powered by SQLite 🗄️ | Built for hackers 🛠️</p>
@@ -410,65 +412,6 @@ pub const Server = struct {
         try stream.writeAll(response);
     }
 
-    fn serveStaticFile(self: *Server, stream: std.net.Stream, path: []const u8) !void {
-        // Remove leading slash and serve from web directory
-        const file_path = if (std.mem.startsWith(u8, path, "/")) path[1..] else path;
-        const full_path = try std.fmt.allocPrint(self.allocator, "web/{s}", .{file_path});
-        defer self.allocator.free(full_path);
-
-        const file_content = std.fs.cwd().readFileAlloc(self.allocator, full_path, 10 * 1024 * 1024) catch |err| {
-            std.debug.print("Failed to read static file {s}: {}\n", .{ full_path, err });
-            return self.serve404(stream);
-        };
-        defer self.allocator.free(file_content);
-
-        // Determine content type
-        const content_type = if (std.mem.endsWith(u8, path, ".css"))
-            "text/css"
-        else if (std.mem.endsWith(u8, path, ".js"))
-            "application/javascript"
-        else if (std.mem.endsWith(u8, path, ".svg"))
-            "image/svg+xml"
-        else if (std.mem.endsWith(u8, path, ".png"))
-            "image/png"
-        else if (std.mem.endsWith(u8, path, ".jpg") or std.mem.endsWith(u8, path, ".jpeg"))
-            "image/jpeg"
-        else
-            "application/octet-stream";
-
-        const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: {s}\r\nContent-Length: {}\r\nCache-Control: public, max-age=3600\r\n\r\n{s}", .{ content_type, file_content.len, file_content });
-        defer self.allocator.free(response);
-
-        try stream.writeAll(response);
-    }
-
-    fn servePackagePage(self: *Server, stream: std.net.Stream, path: []const u8) !void {
-        // For now, serve the main template - later we can parse package name and serve specific pages
-        _ = path;
-        return self.serveWebUI(stream);
-    }
-
-    fn handleStatsApi(self: *Server, stream: std.net.Stream) !void {
-        const stats = try self.database.getDownloadStats();
-        
-        const json_response = try std.fmt.allocPrint(self.allocator,
-            \\{{
-            \\  "success": true,
-            \\  "total_packages": {},
-            \\  "total_downloads": {},
-            \\  "downloads_today": {},
-            \\  "active_maintainers": 89,
-            \\  "zig_version": "0.14.0"
-            \\}}
-        , .{ stats.total_packages, stats.total_downloads, stats.downloads_today });
-        defer self.allocator.free(json_response);
-
-        const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\n\r\n{s}", .{ json_response.len, json_response });
-        defer self.allocator.free(response);
-
-        try stream.writeAll(response);
-    }
-
     fn handlePackageApi(self: *Server, stream: std.net.Stream, path: []const u8) !void {
         if (std.mem.eql(u8, path, "/api/packages")) {
             // List packages
@@ -550,10 +493,12 @@ pub const Server = struct {
         const packages = try self.database.searchPackages(query, 20);
         defer {
             for (packages) |pkg| {
-                self.allocator.free(pkg.name);
+                self.allocator.free(pkg.owner);
+                self.allocator.free(pkg.repo);
                 if (pkg.description) |desc| self.allocator.free(desc);
-                if (pkg.author) |author| self.allocator.free(author);
-                if (pkg.license) |license| self.allocator.free(license);
+                if (pkg.latest_version) |version| self.allocator.free(version);
+                for (pkg.topics) |topic| self.allocator.free(topic);
+                self.allocator.free(pkg.topics);
             }
             self.allocator.free(packages);
         }
@@ -568,16 +513,23 @@ pub const Server = struct {
 
             const pkg_json = try std.fmt.allocPrint(self.allocator,
                 \\{{
-                \\  "name": "{s}",
-                \\  "version": "{s}",
+                \\  "name": "{s}/{s}",
+                \\  "owner": "{s}",
+                \\  "repo": "{s}",
                 \\  "description": "{s}",
-                \\  "author": "{s}"
+                \\  "github_stars": {d},
+                \\  "download_count": {d},
+                \\  "latest_version": "{s}"
                 \\}}
             , .{
-                pkg.name,
-                pkg.version orelse "0.0.0",
+                pkg.owner,
+                pkg.repo,
+                pkg.owner,
+                pkg.repo,
                 pkg.description orelse "",
-                pkg.author orelse "",
+                pkg.github_stars,
+                pkg.download_count,
+                pkg.latest_version orelse "",
             });
             defer self.allocator.free(pkg_json);
             try json_list.appendSlice(pkg_json);
@@ -639,7 +591,7 @@ pub const Server = struct {
         // Parse query parameter
         var query: []const u8 = "";
         if (std.mem.indexOf(u8, path, "?q=")) |idx| {
-            query = path[idx + 3..];
+            query = path[idx + 3 ..];
             // URL decode would go here in production
         }
 
@@ -775,7 +727,7 @@ pub const Server = struct {
         // Parse category parameter
         var category: []const u8 = "all";
         if (std.mem.indexOf(u8, path, "?category=")) |idx| {
-            category = path[idx + 10..];
+            category = path[idx + 10 ..];
             // URL decode would go here in production
         }
 
@@ -842,5 +794,659 @@ pub const Server = struct {
         defer self.allocator.free(response);
 
         try stream.writeAll(response);
+    }
+
+    // GitHub-compatible API v1 handlers
+
+    // GET /api/v1/packages/{owner}/{repo}/releases
+    // GET /api/v1/packages/{owner}/{repo}/releases/{tag}
+    // GET /api/v1/packages/{owner}/{repo}/tags
+    fn handlePackageApiV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse path: /api/v1/packages/{owner}/{repo}/...
+        const prefix = "/api/v1/packages/";
+        if (!std.mem.startsWith(u8, path, prefix)) {
+            return self.serve404(stream);
+        }
+
+        const path_after_prefix = path[prefix.len..];
+        var parts = std.mem.splitSequence(u8, path_after_prefix, "/");
+        const owner = parts.next() orelse return self.serve404(stream);
+        const repo = parts.next() orelse return self.serve404(stream);
+        const action = parts.next();
+
+        if (action == null) {
+            // GET /api/v1/packages/{owner}/{repo} - get package info
+            try self.handleGetPackageV1(stream, owner, repo);
+        } else if (std.mem.eql(u8, action.?, "releases")) {
+            const tag = parts.next();
+            if (tag == null) {
+                // GET /api/v1/packages/{owner}/{repo}/releases - list releases
+                try self.handleGetReleasesV1(stream, owner, repo);
+            } else {
+                // GET /api/v1/packages/{owner}/{repo}/releases/{tag} - get specific release
+                try self.handleGetReleaseV1(stream, owner, repo, tag.?);
+            }
+        } else if (std.mem.eql(u8, action.?, "tags")) {
+            // GET /api/v1/packages/{owner}/{repo}/tags - list tags (alias for releases)
+            try self.handleGetTagsV1(stream, owner, repo);
+        } else if (std.mem.eql(u8, action.?, "download")) {
+            const version = parts.next() orelse return self.serve404(stream);
+            // GET /api/v1/packages/{owner}/{repo}/download/{version} - download package
+            try self.handleDownloadPackageV1(stream, owner, repo, version);
+        } else {
+            try self.serve404(stream);
+        }
+    }
+
+    fn handleGetPackageV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8) !void {
+        const package = try self.database.getPackageGitHub(owner, repo);
+        if (package == null) {
+            try self.serveJsonError(stream, 404, "Package not found");
+            return;
+        }
+
+        const pkg = package.?;
+        defer {
+            self.allocator.free(pkg.owner);
+            self.allocator.free(pkg.repo);
+            if (pkg.description) |d| self.allocator.free(d);
+            if (pkg.license) |l| self.allocator.free(l);
+            if (pkg.homepage) |h| self.allocator.free(h);
+            if (pkg.github_url) |g| self.allocator.free(g);
+            for (pkg.topics) |topic| self.allocator.free(topic);
+            self.allocator.free(pkg.topics);
+        }
+
+        const topics_json = try self.serializeStringArray(pkg.topics);
+        defer self.allocator.free(topics_json);
+
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "owner": "{s}",
+            \\  "repo": "{s}",
+            \\  "full_name": "{s}/{s}",
+            \\  "description": "{s}",
+            \\  "topics": {s},
+            \\  "license": "{s}",
+            \\  "homepage": "{s}",
+            \\  "github_url": "{s}",
+            \\  "stargazers_count": {d},
+            \\  "created_at": "{d}",
+            \\  "updated_at": "{d}",
+            \\  "private": {s}
+            \\}}
+        , .{
+            pkg.owner,
+            pkg.repo,
+            pkg.owner,
+            pkg.repo,
+            pkg.description orelse "",
+            topics_json,
+            pkg.license orelse "",
+            pkg.homepage orelse "",
+            pkg.github_url orelse "",
+            pkg.github_stars,
+            pkg.created_at,
+            pkg.updated_at,
+            if (pkg.is_private) "true" else "false",
+        });
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 200, json_response);
+    }
+
+    fn handleGetReleasesV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8) !void {
+        const releases = try self.database.getReleases(owner, repo);
+        defer {
+            for (releases) |release| {
+                self.allocator.free(release.owner);
+                self.allocator.free(release.repo);
+                self.allocator.free(release.tag_name);
+                if (release.name) |n| self.allocator.free(n);
+                if (release.body) |b| self.allocator.free(b);
+                if (release.tarball_url) |t| self.allocator.free(t);
+                if (release.zipball_url) |z| self.allocator.free(z);
+                if (release.download_url) |d| self.allocator.free(d);
+                if (release.sha256) |s| self.allocator.free(s);
+            }
+            self.allocator.free(releases);
+        }
+
+        var json_list = std.ArrayList(u8).init(self.allocator);
+        defer json_list.deinit();
+
+        try json_list.appendSlice("[");
+        for (releases, 0..) |release, i| {
+            if (i > 0) try json_list.appendSlice(",");
+
+            const release_json = try std.fmt.allocPrint(self.allocator,
+                \\{{
+                \\  "id": {d},
+                \\  "tag_name": "{s}",
+                \\  "name": "{s}",
+                \\  "body": "{s}",
+                \\  "draft": {s},
+                \\  "prerelease": {s},
+                \\  "created_at": "{d}",
+                \\  "published_at": {s},
+                \\  "tarball_url": "{s}",
+                \\  "zipball_url": "{s}",
+                \\  "download_url": "{s}",
+                \\  "file_size": {d},
+                \\  "sha256": "{s}"
+                \\}}
+            , .{
+                release.id,
+                release.tag_name,
+                release.name orelse "",
+                release.body orelse "",
+                if (release.draft) "true" else "false",
+                if (release.prerelease) "true" else "false",
+                release.created_at,
+                if (release.published_at) |p| try std.fmt.allocPrint(self.allocator, "\"{d}\"", .{p}) else "null",
+                release.tarball_url orelse "",
+                release.zipball_url orelse "",
+                release.download_url orelse "",
+                release.file_size,
+                release.sha256 orelse "",
+            });
+            defer self.allocator.free(release_json);
+            if (release.published_at != null) self.allocator.free(try std.fmt.allocPrint(self.allocator, "\"{d}\"", .{release.published_at.?}));
+
+            try json_list.appendSlice(release_json);
+        }
+        try json_list.appendSlice("]");
+
+        const json_response = try json_list.toOwnedSlice();
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 200, json_response);
+    }
+
+    fn handleGetReleaseV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8, tag: []const u8) !void {
+        const release = try self.database.getRelease(owner, repo, tag);
+        if (release == null) {
+            try self.serveJsonError(stream, 404, "Release not found");
+            return;
+        }
+
+        const rel = release.?;
+        defer {
+            self.allocator.free(rel.owner);
+            self.allocator.free(rel.repo);
+            self.allocator.free(rel.tag_name);
+            if (rel.name) |n| self.allocator.free(n);
+            if (rel.body) |b| self.allocator.free(b);
+            if (rel.tarball_url) |t| self.allocator.free(t);
+            if (rel.zipball_url) |z| self.allocator.free(z);
+            if (rel.download_url) |d| self.allocator.free(d);
+            if (rel.sha256) |s| self.allocator.free(s);
+        }
+
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "id": {d},
+            \\  "tag_name": "{s}",
+            \\  "name": "{s}",
+            \\  "body": "{s}",
+            \\  "draft": {s},
+            \\  "prerelease": {s},
+            \\  "created_at": "{d}",
+            \\  "published_at": {s},
+            \\  "tarball_url": "{s}",
+            \\  "zipball_url": "{s}",
+            \\  "download_url": "{s}",
+            \\  "file_size": {d},
+            \\  "sha256": "{s}"
+            \\}}
+        , .{
+            rel.id,
+            rel.tag_name,
+            rel.name orelse "",
+            rel.body orelse "",
+            if (rel.draft) "true" else "false",
+            if (rel.prerelease) "true" else "false",
+            rel.created_at,
+            if (rel.published_at) |p| try std.fmt.allocPrint(self.allocator, "\"{d}\"", .{p}) else "null",
+            rel.tarball_url orelse "",
+            rel.zipball_url orelse "",
+            rel.download_url orelse "",
+            rel.file_size,
+            rel.sha256 orelse "",
+        });
+        defer self.allocator.free(json_response);
+        if (rel.published_at != null) self.allocator.free(try std.fmt.allocPrint(self.allocator, "\"{d}\"", .{rel.published_at.?}));
+
+        try self.serveJson(stream, 200, json_response);
+    }
+
+    fn handleGetTagsV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8) !void {
+        const releases = try self.database.getReleases(owner, repo);
+        defer {
+            for (releases) |release| {
+                self.allocator.free(release.owner);
+                self.allocator.free(release.repo);
+                self.allocator.free(release.tag_name);
+                if (release.name) |n| self.allocator.free(n);
+                if (release.body) |b| self.allocator.free(b);
+                if (release.tarball_url) |t| self.allocator.free(t);
+                if (release.zipball_url) |z| self.allocator.free(z);
+                if (release.download_url) |d| self.allocator.free(d);
+                if (release.sha256) |s| self.allocator.free(s);
+            }
+            self.allocator.free(releases);
+        }
+
+        var json_list = std.ArrayList(u8).init(self.allocator);
+        defer json_list.deinit();
+
+        try json_list.appendSlice("[");
+        for (releases, 0..) |release, i| {
+            if (i > 0) try json_list.appendSlice(",");
+
+            const tag_json = try std.fmt.allocPrint(self.allocator,
+                \\{{
+                \\  "name": "{s}",
+                \\  "zipball_url": "{s}",
+                \\  "tarball_url": "{s}",
+                \\  "commit": {{
+                \\    "sha": "{s}",
+                \\    "url": ""
+                \\  }}
+                \\}}
+            , .{
+                release.tag_name,
+                release.zipball_url orelse "",
+                release.tarball_url orelse "",
+                release.sha256 orelse "",
+            });
+            defer self.allocator.free(tag_json);
+
+            try json_list.appendSlice(tag_json);
+        }
+        try json_list.appendSlice("]");
+
+        const json_response = try json_list.toOwnedSlice();
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 200, json_response);
+    }
+
+    fn handleDownloadPackageV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8, version: []const u8) !void {
+        const release = try self.database.getRelease(owner, repo, version);
+        if (release == null) {
+            try self.serveJsonError(stream, 404, "Release not found");
+            return;
+        }
+
+        const rel = release.?;
+        defer {
+            self.allocator.free(rel.owner);
+            self.allocator.free(rel.repo);
+            self.allocator.free(rel.tag_name);
+            if (rel.name) |n| self.allocator.free(n);
+            if (rel.body) |b| self.allocator.free(b);
+            if (rel.tarball_url) |t| self.allocator.free(t);
+            if (rel.zipball_url) |z| self.allocator.free(z);
+            if (rel.download_url) |d| self.allocator.free(d);
+            if (rel.sha256) |s| self.allocator.free(s);
+        }
+
+        // Increment download count
+        try self.database.incrementDownloadCount(owner, repo, version);
+
+        if (rel.download_url) |download_url| {
+            // Redirect to the download URL
+            const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 302 Found\r\nLocation: {s}\r\nContent-Length: 0\r\n\r\n", .{download_url});
+            defer self.allocator.free(response);
+            try stream.writeAll(response);
+        } else {
+            try self.serveJsonError(stream, 404, "Download URL not available");
+        }
+    }
+
+    // GET /api/v1/search?q=query&limit=20
+    fn handleSearchApiV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse query parameters
+        var query: []const u8 = "";
+        var limit: u32 = 20;
+
+        if (std.mem.indexOf(u8, path, "?")) |query_start| {
+            const query_string = path[query_start + 1 ..];
+            var params = std.mem.splitSequence(u8, query_string, "&");
+
+            while (params.next()) |param| {
+                if (std.mem.startsWith(u8, param, "q=")) {
+                    query = param[2..];
+                    // URL decode would go here in production
+                } else if (std.mem.startsWith(u8, param, "limit=")) {
+                    limit = std.fmt.parseInt(u32, param[6..], 10) catch 20;
+                }
+            }
+        }
+
+        if (query.len == 0) {
+            try self.serveJsonError(stream, 400, "Query parameter 'q' is required");
+            return;
+        }
+
+        const results = try self.database.searchPackages(query, limit);
+        defer {
+            for (results) |result| {
+                self.allocator.free(result.owner);
+                self.allocator.free(result.repo);
+                if (result.description) |d| self.allocator.free(d);
+                if (result.latest_version) |v| self.allocator.free(v);
+                for (result.topics) |topic| self.allocator.free(topic);
+                self.allocator.free(result.topics);
+            }
+            self.allocator.free(results);
+        }
+
+        var json_list = std.ArrayList(u8).init(self.allocator);
+        defer json_list.deinit();
+
+        try json_list.appendSlice("{\"items\":[");
+        for (results, 0..) |result, i| {
+            if (i > 0) try json_list.appendSlice(",");
+
+            const topics_json = try self.serializeStringArray(result.topics);
+            defer self.allocator.free(topics_json);
+
+            const result_json = try std.fmt.allocPrint(self.allocator,
+                \\{{
+                \\  "full_name": "{s}/{s}",
+                \\  "owner": "{s}",
+                \\  "name": "{s}",
+                \\  "description": "{s}",
+                \\  "topics": {s},
+                \\  "stargazers_count": {d},
+                \\  "download_count": {d},
+                \\  "latest_version": "{s}",
+                \\  "updated_at": "{d}"
+                \\}}
+            , .{
+                result.owner,
+                result.repo,
+                result.owner,
+                result.repo,
+                result.description orelse "",
+                topics_json,
+                result.github_stars,
+                result.download_count,
+                result.latest_version orelse "",
+                result.updated_at,
+            });
+            defer self.allocator.free(result_json);
+
+            try json_list.appendSlice(result_json);
+        }
+        try json_list.appendSlice("],\"total_count\":");
+        try json_list.writer().print("{}", .{results.len});
+        try json_list.appendSlice("}");
+
+        const json_response = try json_list.toOwnedSlice();
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 200, json_response);
+    }
+
+    // GET /api/v1/resolve/{short_name}
+    fn handleResolveApiV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        const prefix = "/api/v1/resolve/";
+        if (!std.mem.startsWith(u8, path, prefix)) {
+            return self.serve404(stream);
+        }
+
+        const short_name = path[prefix.len..];
+        if (short_name.len == 0) {
+            try self.serveJsonError(stream, 400, "Short name is required");
+            return;
+        }
+
+        const alias = try self.database.resolveAlias(short_name);
+        if (alias == null) {
+            try self.serveJsonError(stream, 404, "Alias not found");
+            return;
+        }
+
+        const al = alias.?;
+        defer {
+            self.allocator.free(al.short_name);
+            self.allocator.free(al.owner);
+            self.allocator.free(al.repo);
+            if (al.created_by) |c| self.allocator.free(c);
+        }
+
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "short_name": "{s}",
+            \\  "full_name": "{s}/{s}",
+            \\  "owner": "{s}",
+            \\  "repo": "{s}",
+            \\  "created_at": "{d}",
+            \\  "created_by": "{s}"
+            \\}}
+        , .{
+            al.short_name,
+            al.owner,
+            al.repo,
+            al.owner,
+            al.repo,
+            al.created_at,
+            al.created_by orelse "",
+        });
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 200, json_response);
+    }
+
+    // GET /api/v1/registry/config
+    fn handleRegistryConfigV1(self: *Server, stream: std.net.Stream) !void {
+        const registry_name = try self.database.getRegistryConfig("registry_name") orelse try self.allocator.dupe(u8, "Zepplin Registry");
+        defer self.allocator.free(registry_name);
+
+        const registry_url = try self.database.getRegistryConfig("registry_url") orelse try self.allocator.dupe(u8, "http://localhost:8080");
+        defer self.allocator.free(registry_url);
+
+        const api_version = try self.database.getRegistryConfig("api_version") orelse try self.allocator.dupe(u8, "v1");
+        defer self.allocator.free(api_version);
+
+        const allow_public_publish = try self.database.getRegistryConfig("allow_public_publish") orelse try self.allocator.dupe(u8, "1");
+        defer self.allocator.free(allow_public_publish);
+
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "name": "{s}",
+            \\  "url": "{s}",
+            \\  "api_version": "{s}",
+            \\  "allow_public_publish": {s},
+            \\  "github_compatible": true,
+            \\  "features": [
+            \\    "packages",
+            \\    "releases",
+            \\    "aliases",
+            \\    "search",
+            \\    "download_stats"
+            \\  ]
+            \\}}
+        , .{
+            registry_name,
+            registry_url,
+            api_version,
+            if (std.mem.eql(u8, allow_public_publish, "1")) "true" else "false",
+        });
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 200, json_response);
+    }
+
+    // GET /api/v1/health
+    fn handleHealthV1(self: *Server, stream: std.net.Stream) !void {
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "status": "ok",
+            \\  "timestamp": "{d}",
+            \\  "version": "1.0.0",
+            \\  "features": {{
+            \\    "database": "sqlite",
+            \\    "storage": "filesystem",
+            \\    "zigistry_integration": true
+            \\  }}
+            \\}}
+        , .{std.time.timestamp()});
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 200, json_response);
+    }
+
+    // POST /api/v1/packages/{owner}/{repo}/releases
+    fn handlePublishPackageV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse path to extract owner and repo
+        const prefix = "/api/v1/packages/";
+        if (!std.mem.startsWith(u8, path, prefix)) {
+            return self.serve404(stream);
+        }
+
+        const path_after_prefix = path[prefix.len..];
+        var parts = std.mem.splitSequence(u8, path_after_prefix, "/");
+        const owner = parts.next() orelse return self.serve404(stream);
+        const repo = parts.next() orelse return self.serve404(stream);
+        const action = parts.next();
+
+        if (action == null or !std.mem.eql(u8, action.?, "releases")) {
+            try self.serveJsonError(stream, 400, "Invalid endpoint. Use /api/v1/packages/{owner}/{repo}/releases");
+            return;
+        }
+
+        // TODO: Parse multipart form data and extract:
+        // - tag_name (required)
+        // - name (optional)
+        // - body (optional)
+        // - draft (boolean, default false)
+        // - prerelease (boolean, default false)
+        // - file (required - the package archive)
+
+        // For now, return a placeholder response
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "message": "Package publishing endpoint - implementation in progress",
+            \\  "owner": "{s}",
+            \\  "repo": "{s}",
+            \\  "status": "placeholder"
+            \\}}
+        , .{ owner, repo });
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 501, json_response);
+    }
+
+    // PUT /api/v1/aliases/{short_name}
+    fn handleCreateAliasV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        const prefix = "/api/v1/aliases/";
+        if (!std.mem.startsWith(u8, path, prefix)) {
+            return self.serve404(stream);
+        }
+
+        const short_name = path[prefix.len..];
+        if (short_name.len == 0) {
+            try self.serveJsonError(stream, 400, "Short name is required");
+            return;
+        }
+
+        // TODO: Parse JSON body to extract owner/repo
+        // For now, return a placeholder response
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "message": "Alias creation endpoint - implementation in progress",
+            \\  "short_name": "{s}",
+            \\  "status": "placeholder"
+            \\}}
+        , .{short_name});
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 501, json_response);
+    }
+
+    // DELETE /api/v1/packages/{owner}/{repo}/releases/{tag}
+    fn handleDeletePackageV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse path
+        const prefix = "/api/v1/packages/";
+        if (!std.mem.startsWith(u8, path, prefix)) {
+            return self.serve404(stream);
+        }
+
+        const path_after_prefix = path[prefix.len..];
+        var parts = std.mem.splitSequence(u8, path_after_prefix, "/");
+        const owner = parts.next() orelse return self.serve404(stream);
+        const repo = parts.next() orelse return self.serve404(stream);
+        const action = parts.next();
+        const tag = parts.next();
+
+        if (action == null or !std.mem.eql(u8, action.?, "releases") or tag == null) {
+            try self.serveJsonError(stream, 400, "Invalid endpoint. Use DELETE /api/v1/packages/{owner}/{repo}/releases/{tag}");
+            return;
+        }
+
+        // TODO: Implement release deletion
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "message": "Package deletion endpoint - implementation in progress",
+            \\  "owner": "{s}",
+            \\  "repo": "{s}",
+            \\  "tag": "{s}",
+            \\  "status": "placeholder"
+            \\}}
+        , .{ owner, repo, tag.? });
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 501, json_response);
+    }
+
+    // Helper methods
+    fn serveJson(self: *Server, stream: std.net.Stream, status_code: u16, json_content: []const u8) !void {
+        const status_text = switch (status_code) {
+            200 => "OK",
+            201 => "Created",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            404 => "Not Found",
+            500 => "Internal Server Error",
+            501 => "Not Implemented",
+            else => "Unknown",
+        };
+
+        const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 {d} {s}\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {d}\r\n\r\n{s}", .{ status_code, status_text, json_content.len, json_content });
+        defer self.allocator.free(response);
+
+        try stream.writeAll(response);
+    }
+
+    fn serveJsonError(self: *Server, stream: std.net.Stream, status_code: u16, message: []const u8) !void {
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "message": "{s}",
+            \\  "documentation_url": "https://github.com/your-org/zepplin"
+            \\}}
+        , .{message});
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, status_code, json_response);
+    }
+
+    fn serializeStringArray(self: *Server, strings: [][]const u8) ![]u8 {
+        var json = std.ArrayList(u8).init(self.allocator);
+        defer json.deinit();
+
+        try json.append('[');
+        for (strings, 0..) |str, i| {
+            if (i > 0) try json.appendSlice(",");
+            try json.append('"');
+            try json.appendSlice(str);
+            try json.append('"');
+        }
+        try json.append(']');
+
+        return json.toOwnedSlice();
     }
 };

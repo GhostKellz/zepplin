@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   zepplin:
-    build: .
+    build:
+      context: /data/projects/zepplin
+      dockerfile: Dockerfile
     container_name: zepplin-registry
     restart: unless-stopped
     # Don't expose ports directly - nginx proxy will handle this

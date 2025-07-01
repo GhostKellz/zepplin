@@ -5,11 +5,15 @@ zig-out/
 # Development files
 .git/
 .github/
-*.md
 dev.sh
+
+# Documentation (keep only essential files)
+*.md
+!README.md
 
 # Test files
 test_*
+!test_api.zig
 
 # Data directories
 data/

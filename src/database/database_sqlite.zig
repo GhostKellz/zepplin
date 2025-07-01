@@ -429,9 +429,7 @@ pub const Database = struct {
     pub fn getPackageGitHub(self: *Database, owner: []const u8, repo: []const u8) !?types.Package {
         if (self.db == null) return null;
 
-        const sql = try std.fmt.allocPrint(self.allocator, 
-            "SELECT owner, repo, description, topics, license, homepage, github_url, github_stars, created_at, updated_at, is_private FROM packages WHERE owner = '{s}' AND repo = '{s}'", 
-            .{owner, repo});
+        const sql = try std.fmt.allocPrint(self.allocator, "SELECT owner, repo, description, topics, license, homepage, github_url, github_stars, created_at, updated_at, is_private FROM packages WHERE owner = '{s}' AND repo = '{s}'", .{ owner, repo });
         defer self.allocator.free(sql);
 
         const sql_z = try self.allocator.dupeZ(u8, sql);
@@ -463,9 +461,9 @@ pub const Database = struct {
         const owner_str = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(owner_cstr))));
         const repo_str = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(repo_cstr))));
 
-        const topics = if (topics_cstr != null) 
+        const topics = if (topics_cstr != null)
             try self.deserializeTopics(std.mem.span(@as([*:0]const u8, @ptrCast(topics_cstr))))
-        else 
+        else
             @as([][]const u8, &[_][]const u8{});
 
         return types.Package{
@@ -528,9 +526,7 @@ pub const Database = struct {
     pub fn getReleases(self: *Database, owner: []const u8, repo: []const u8) ![]types.Release {
         if (self.db == null) return &[_]types.Release{};
 
-        const sql = try std.fmt.allocPrint(self.allocator, 
-            "SELECT id, owner, repo, tag_name, name, body, draft, prerelease, created_at, published_at, tarball_url, zipball_url, download_url, file_size, sha256 FROM releases WHERE owner = '{s}' AND repo = '{s}' ORDER BY published_at DESC", 
-            .{owner, repo});
+        const sql = try std.fmt.allocPrint(self.allocator, "SELECT id, owner, repo, tag_name, name, body, draft, prerelease, created_at, published_at, tarball_url, zipball_url, download_url, file_size, sha256 FROM releases WHERE owner = '{s}' AND repo = '{s}' ORDER BY published_at DESC", .{ owner, repo });
         defer self.allocator.free(sql);
 
         var releases = std.ArrayList(types.Release).init(self.allocator);
@@ -609,9 +605,7 @@ pub const Database = struct {
     pub fn getRelease(self: *Database, owner: []const u8, repo: []const u8, tag: []const u8) !?types.Release {
         if (self.db == null) return null;
 
-        const sql = try std.fmt.allocPrint(self.allocator, 
-            "SELECT id, owner, repo, tag_name, name, body, draft, prerelease, created_at, published_at, tarball_url, zipball_url, download_url, file_size, sha256 FROM releases WHERE owner = '{s}' AND repo = '{s}' AND tag_name = '{s}'", 
-            .{owner, repo, tag});
+        const sql = try std.fmt.allocPrint(self.allocator, "SELECT id, owner, repo, tag_name, name, body, draft, prerelease, created_at, published_at, tarball_url, zipball_url, download_url, file_size, sha256 FROM releases WHERE owner = '{s}' AND repo = '{s}' AND tag_name = '{s}'", .{ owner, repo, tag });
         defer self.allocator.free(sql);
 
         const sql_z = try self.allocator.dupeZ(u8, sql);
@@ -702,9 +696,7 @@ pub const Database = struct {
     pub fn resolveAlias(self: *Database, short_name: []const u8) !?types.Alias {
         if (self.db == null) return null;
 
-        const sql = try std.fmt.allocPrint(self.allocator, 
-            "SELECT short_name, owner, repo, created_at, created_by FROM aliases WHERE short_name = '{s}'", 
-            .{short_name});
+        const sql = try std.fmt.allocPrint(self.allocator, "SELECT short_name, owner, repo, created_at, created_by FROM aliases WHERE short_name = '{s}'", .{short_name});
         defer self.allocator.free(sql);
 
         const sql_z = try self.allocator.dupeZ(u8, sql);
@@ -776,32 +768,22 @@ pub const Database = struct {
 
             if (owner_cstr == null or repo_cstr == null) continue;
 
-            const topics = if (topics_cstr != null) 
+            const topics = if (topics_cstr != null)
                 try self.deserializeTopics(std.mem.span(@as([*:0]const u8, @ptrCast(topics_cstr))))
-            else 
+            else
                 @as([][]const u8, &[_][]const u8{});
 
-            const owner_str = std.mem.span(@as([*:0]const u8, @ptrCast(owner_cstr)));
-            const repo_str = std.mem.span(@as([*:0]const u8, @ptrCast(repo_cstr)));
-            const name = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ owner_str, repo_str });
-            
             const search_result = types.SearchResult{
-                .name = name,
-                .owner = try self.allocator.dupe(u8, owner_str),
-                .repo = try self.allocator.dupe(u8, repo_str),
+                .owner = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(owner_cstr)))),
+                .repo = try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(repo_cstr)))),
                 .description = if (desc_cstr != null)
                     try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(desc_cstr))))
                 else
                     null,
-                .version = null,
-                .author = null,
-                .license = null,
-                .repository = null,
                 .topics = topics,
                 .github_stars = github_stars,
                 .download_count = download_count,
                 .latest_version = null, // TODO: get from releases
-                .created_at = null,
                 .updated_at = updated_at,
             };
 
@@ -815,9 +797,7 @@ pub const Database = struct {
     pub fn getRegistryConfig(self: *Database, key: []const u8) !?[]u8 {
         if (self.db == null) return null;
 
-        const sql = try std.fmt.allocPrint(self.allocator, 
-            "SELECT value FROM registry_config WHERE key = '{s}'", 
-            .{key});
+        const sql = try std.fmt.allocPrint(self.allocator, "SELECT value FROM registry_config WHERE key = '{s}'", .{key});
         defer self.allocator.free(sql);
 
         const sql_z = try self.allocator.dupeZ(u8, sql);

@@ -10,17 +10,29 @@ RUN apk add --no-cache \
     git \
     && rm -rf /var/cache/apk/*
 
-# Install Zig (latest dev build for cutting-edge features)
+# Install Zig (latest dev build)
 # You can override this with --build-arg ZIG_VERSION=0.15.0-dev.xyz
-ARG ZIG_VERSION=0.15.0-dev.847+850655f06
-RUN curl -L "https://ziglang.org/builds/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" | tar -xJ -C /opt \
-    && ln -s "/opt/zig-linux-x86_64-${ZIG_VERSION}/zig" /usr/local/bin/zig
+ARG ZIG_VERSION=0.15.0-dev.885+e83776595
+RUN curl -L "https://ziglang.org/builds/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" | tar -xJ -C /opt \
+    && ln -s "/opt/zig-x86_64-linux-${ZIG_VERSION}/zig" /usr/local/bin/zig \
+    && zig version
 
 # Build stage
 FROM zig-builder AS builder
 
 WORKDIR /app
-COPY . .
+
+# Debug: List what files are available in the build context
+RUN echo "=== Build context contents ===" && ls -la /
+
+# Copy build files first for better caching
+COPY build.zig build.zig.zon ./
+
+# Copy source code
+COPY src/ ./src/
+
+# List files to debug
+RUN ls -la && ls -la src/
 
 # Build the application with optimizations
 RUN zig build -Doptimize=ReleaseFast
@@ -33,6 +45,7 @@ RUN apk add --no-cache \
     sqlite \
     ca-certificates \
     tzdata \
+    curl \
     && rm -rf /var/cache/apk/*
 
 # Create non-root user for security
@@ -59,7 +72,7 @@ EXPOSE 8080
 
 # Health check for container orchestration
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 # Set environment variables for production
 ENV ZIG_ENV=production
