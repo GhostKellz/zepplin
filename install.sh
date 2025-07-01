@@ -247,64 +247,7 @@ EOF
 systemctl daemon-reload
 systemctl enable zepplin.service
 
-# Create nginx configuration (if nginx is installed)
-if command -v nginx &> /dev/null; then
-    print_status "Creating nginx configuration..."
-    cat > /etc/nginx/sites-available/zepplin << EOF
-server {
-    listen 80;
-    server_name $DOMAIN;
-    
-    # Security headers
-    add_header X-Frame-Options DENY;
-    add_header X-Content-Type-Options nosniff;
-    add_header X-XSS-Protection "1; mode=block";
-    
-    # Proxy to Zepplin
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        
-        # Handle large package uploads
-        client_max_body_size 100M;
-        proxy_read_timeout 300s;
-        proxy_connect_timeout 300s;
-        proxy_send_timeout 300s;
-    }
-    
-    # Health check endpoint
-    location /health {
-        proxy_pass http://127.0.0.1:8080/health;
-        access_log off;
-    }
-    
-    # Static files (if any)
-    location /static/ {
-        proxy_pass http://127.0.0.1:8080/static/;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-}
-EOF
 
-    # Enable site if sites-enabled exists
-    if [ -d "/etc/nginx/sites-enabled" ]; then
-        ln -sf /etc/nginx/sites-available/zepplin /etc/nginx/sites-enabled/
-        print_status "Nginx configuration created and enabled"
-        
-        # Test nginx configuration
-        if nginx -t 2>/dev/null; then
-            print_status "Nginx configuration is valid"
-        else
-            print_warning "Nginx configuration test failed. Please check manually."
-        fi
-    fi
-else
-    print_warning "Nginx not found. Skipping nginx configuration."
-fi
 
 # Create management scripts
 print_status "Creating management scripts..."
