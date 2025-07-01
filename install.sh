@@ -134,8 +134,6 @@ chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/.env"
 # Update docker-compose.yml to use correct paths
 print_status "Configuring Docker Compose..."
 cat > "$INSTALL_DIR/docker-compose.yml" << 'EOF'
-version: '3.8'
-
 services:
   zepplin:
     build:
@@ -338,11 +336,21 @@ cd "$(dirname "$0")"
 echo "=== Zepplin Registry Status ==="
 docker compose ps
 echo ""
+echo "=== Container Status Details ==="
+if docker compose ps | grep -q "Up"; then
+    echo "✅ Container is running"
+else
+    echo "❌ Container is not running"
+    echo ""
+    echo "=== Recent Container Logs ==="
+    docker compose logs --tail=20 zepplin 2>/dev/null || echo "No logs available"
+    echo ""
+    echo "=== Systemd Service Status ==="
+    systemctl status zepplin --no-pager -l
+fi
+echo ""
 echo "=== Resource Usage ==="
 docker stats --no-stream zepplin-registry 2>/dev/null || echo "Container not running"
-echo ""
-echo "=== Recent Logs ==="
-docker compose logs --tail=10 zepplin 2>/dev/null || echo "No logs available"
 EOF
 
 # Update script
@@ -377,13 +385,25 @@ print_status "Starting Zepplin Registry..."
 systemctl start zepplin.service
 
 # Wait a moment for startup
-sleep 10
+sleep 15
 
 # Check if service is running
 if systemctl is-active --quiet zepplin.service; then
-    print_status "✅ Zepplin Registry is running!"
+    print_status "✅ Systemd service is running!"
+    
+    # Check if container is actually running
+    cd "$INSTALL_DIR"
+    if docker compose ps | grep -q "Up"; then
+        print_status "✅ Container is running!"
+    else
+        print_warning "⚠️ Service is running but container may have issues. Checking logs..."
+        docker compose logs --tail=20 zepplin || echo "No logs available"
+    fi
 else
     print_error "❌ Service failed to start. Check logs with: journalctl -u zepplin.service -f"
+    print_status "Attempting to get container logs..."
+    cd "$INSTALL_DIR"
+    docker compose logs --tail=20 zepplin || echo "No container logs available"
     exit 1
 fi
 

@@ -25,15 +25,33 @@ pub fn main() !void {
 
         const data_dir = if (args.len > 3) args[3] else "./data";
 
+        std.debug.print("🚀 Starting Zepplin Registry Server...\n", .{});
+        std.debug.print("📁 Data directory: {s}\n", .{data_dir});
+        std.debug.print("🌐 Port: {}\n", .{port});
+
         // Ensure data directory exists
         std.fs.cwd().makeDir(data_dir) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
+            error.PathAlreadyExists => {
+                std.debug.print("✅ Data directory exists: {s}\n", .{data_dir});
+            },
+            else => {
+                std.debug.print("❌ Failed to create data directory: {}\n", .{err});
+                return err;
+            },
         };
 
-        var registry_server = try server.Server.init(allocator, port, data_dir);
+        std.debug.print("🗄️ Initializing database...\n", .{});
+        var registry_server = server.Server.init(allocator, port, data_dir) catch |err| {
+            std.debug.print("❌ Failed to initialize server: {}\n", .{err});
+            return err;
+        };
         defer registry_server.deinit();
-        try registry_server.start();
+        
+        std.debug.print("🌐 Starting server on port {}...\n", .{port});
+        registry_server.start() catch |err| {
+            std.debug.print("❌ Failed to start server: {}\n", .{err});
+            return err;
+        };
         return;
     }
 

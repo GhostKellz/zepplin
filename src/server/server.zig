@@ -98,6 +98,8 @@ pub const Server = struct {
         if (std.mem.eql(u8, method, "GET")) {
             if (std.mem.eql(u8, path, "/")) {
                 try self.serveWebUI(stream);
+            } else if (std.mem.eql(u8, path, "/health")) {
+                try self.handleHealthSimple(stream);
                 // GitHub-compatible API v1 endpoints
             } else if (std.mem.startsWith(u8, path, "/api/v1/packages/")) {
                 try self.handlePackageApiV1(stream, path);
@@ -1401,6 +1403,13 @@ pub const Server = struct {
         defer self.allocator.free(json_response);
 
         try self.serveJson(stream, 501, json_response);
+    }
+
+    // Simple health check endpoint for Docker/nginx
+    fn handleHealthSimple(self: *Server, stream: std.net.Stream) !void {
+        _ = self;
+        const response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nOK";
+        try stream.writeAll(response);
     }
 
     // Helper methods

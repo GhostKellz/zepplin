@@ -78,5 +78,5 @@ ENV ZEPPLIN_LOG_LEVEL=info
 ENV ZEPPLIN_DOMAIN=zig.cktech.org
 ENV ZEPPLIN_REGISTRY_NAME="CKTech Zig Registry"
 
-# Default command - start the registry server
-CMD ["zepplin", "serve", "8080"]
+# Default command - start the registry server with explicit data directory
+CMD ["zepplin", "serve", "8080", "/app/data"]
