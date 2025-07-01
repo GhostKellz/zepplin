@@ -20,29 +20,6 @@ services:
       - ZEPPLIN_LOG_LEVEL=${ZEPPLIN_LOG_LEVEL:-info}
       - ZEPPLIN_MAX_PACKAGE_SIZE=${ZEPPLIN_MAX_PACKAGE_SIZE:-50MB}
       - ZEPPLIN_ENABLE_WASM=${ZEPPLIN_ENABLE_WASM:-true}
-    labels:
-      - "com.docker.compose.service=zepplin-registry"
-      - "org.label-schema.description=CKTech Zig Package Registry"
-
-  # Optional: Database backup service
-  backup:
-    image: alpine:3.19
-    container_name: zepplin-backup
-    restart: "no"
-    volumes:
-      - zepplin_data:/data:ro
-      - /data/projects/zepplin/backups:/backups
-    command: |
-      sh -c '
-        apk add --no-cache sqlite
-        DATE=$$(date +%Y%m%d_%H%M%S)
-        sqlite3 /data/zepplin.db ".backup /backups/zepplin_$$DATE.db"
-        find /backups -name "zepplin_*.db" -mtime +7 -delete
-        echo "Backup completed: zepplin_$$DATE.db"
-      '
-    depends_on:
-      - zepplin
-    network_mode: host
 
 volumes:
   zepplin_data:

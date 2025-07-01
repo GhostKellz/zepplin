@@ -342,14 +342,79 @@ function searchPackages() {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+    // Initial page load animation
+    document.body.style.opacity = '0';
+    document.body.style.transition = 'opacity 0.5s ease-in';
+    
+    setTimeout(() => {
+        document.body.style.opacity = '1';
+    }, 100);
+    
+    // Animate hero elements on load
+    const heroElements = document.querySelectorAll('.hero-title, .hero-subtitle, .search-container, .quick-actions');
+    heroElements.forEach((el, index) => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(20px)';
+        el.style.transition = 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)';
+        
+        setTimeout(() => {
+            el.style.opacity = '1';
+            el.style.transform = 'translateY(0)';
+        }, 200 + (index * 100));
+    });
+    
+    // Initialize main UI
     window.zepplinUI = new ZepplinUI();
+    
+    // Animate stats numbers
+    const animateNumber = (element) => {
+        const endValue = parseInt(element.textContent.replace(/[^0-9]/g, ''));
+        const duration = 2000;
+        const start = Date.now();
+        const startValue = 0;
+        
+        const animate = () => {
+            const elapsed = Date.now() - start;
+            const progress = Math.min(elapsed / duration, 1);
+            const easeProgress = 1 - Math.pow(1 - progress, 3); // Ease out cubic
+            const currentValue = Math.floor(startValue + (endValue - startValue) * easeProgress);
+            
+            element.textContent = window.zepplinUI.formatNumber(currentValue);
+            
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                element.textContent = element.getAttribute('data-final') || window.zepplinUI.formatNumber(endValue);
+            }
+        };
+        
+        animate();
+    };
+    
+    // Observe and animate stats
+    const statsObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && !entry.target.classList.contains('animated')) {
+                entry.target.classList.add('animated');
+                const number = entry.target.querySelector('.stat-number');
+                if (number && !number.classList.contains('animated')) {
+                    number.classList.add('animated');
+                    setTimeout(() => animateNumber(number), 200);
+                }
+            }
+        });
+    }, { threshold: 0.3 });
+    
+    document.querySelectorAll('.stat-card').forEach(card => {
+        statsObserver.observe(card);
+    });
 });
 
 // Add fade-in animation CSS
 const fadeInStyle = document.createElement('style');
 fadeInStyle.textContent = `
     .fade-in {
-        animation: fadeInUp 0.6s ease-out forwards;
+        animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     }
     
     @keyframes fadeInUp {
@@ -365,13 +430,15 @@ fadeInStyle.textContent = `
     
     .suggestion-item {
         padding: 0.75rem 1rem;
-        border-bottom: 1px solid var(--primary-700);
+        border-bottom: 1px solid var(--border-subtle);
         cursor: pointer;
-        transition: background-color 0.2s;
+        transition: all 0.2s ease;
     }
     
     .suggestion-item:hover {
-        background: rgba(59, 130, 246, 0.1);
+        background: rgba(255, 214, 10, 0.1);
+        border-color: var(--lightning-500);
+        transform: translateX(5px);
     }
     
     .suggestion-item:last-child {
@@ -380,13 +447,14 @@ fadeInStyle.textContent = `
     
     .suggestion-name {
         font-weight: 600;
-        color: var(--lightning-300);
+        color: var(--lightning-400);
     }
     
     .suggestion-description {
         font-size: 0.9rem;
-        color: var(--primary-400);
+        color: var(--text-muted);
         margin-top: 0.25rem;
+        opacity: 0.8;
     }
     
     mark {
@@ -429,21 +497,28 @@ fadeInStyle.textContent = `
         position: absolute;
         top: 0.5rem;
         right: 0.5rem;
-        background: var(--primary-700);
-        color: var(--primary-200);
-        border: none;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-default);
+        padding: 0.25rem 0.75rem;
+        border-radius: var(--border-radius-xs);
         font-size: 0.8rem;
+        font-weight: 500;
         cursor: pointer;
-        opacity: 0.7;
-        transition: opacity 0.2s;
+        opacity: 0;
+        transition: all 0.2s ease;
+    }
+    
+    pre:hover .copy-btn {
+        opacity: 1;
     }
     
     .copy-btn:hover {
-        opacity: 1;
         background: var(--lightning-500);
-        color: white;
+        color: var(--ocean-950);
+        border-color: var(--lightning-500);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
     }
 `;
 document.head.appendChild(fadeInStyle);
