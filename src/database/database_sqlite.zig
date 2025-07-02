@@ -948,4 +948,95 @@ pub const Database = struct {
 
         return topics.toOwnedSlice();
     }
+
+    pub fn createUser(self: *Database, username: []const u8, email: []const u8, password_hash: []const u8, api_token: []const u8) !void {
+        const sql = "INSERT INTO users (username, email, password_hash, api_token, created_at) VALUES (?, ?, ?, ?, ?)";
+        
+        var stmt: ?*c.sqlite3_stmt = null;
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+        
+        if (c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null) != c.SQLITE_OK) {
+            std.log.err("Failed to prepare user insert: {s}", .{c.sqlite3_errmsg(self.db)});
+            return error.DatabaseError;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+        
+        const username_z = try self.allocator.dupeZ(u8, username);
+        defer self.allocator.free(username_z);
+        const email_z = try self.allocator.dupeZ(u8, email);
+        defer self.allocator.free(email_z);
+        const password_hash_z = try self.allocator.dupeZ(u8, password_hash);
+        defer self.allocator.free(password_hash_z);
+        const api_token_z = try self.allocator.dupeZ(u8, api_token);
+        defer self.allocator.free(api_token_z);
+        
+        _ = c.sqlite3_bind_text(stmt, 1, username_z.ptr, -1, null);
+        _ = c.sqlite3_bind_text(stmt, 2, email_z.ptr, -1, null);
+        _ = c.sqlite3_bind_text(stmt, 3, password_hash_z.ptr, -1, null);
+        _ = c.sqlite3_bind_text(stmt, 4, api_token_z.ptr, -1, null);
+        _ = c.sqlite3_bind_int64(stmt, 5, std.time.timestamp());
+        
+        if (c.sqlite3_step(stmt) != c.SQLITE_DONE) {
+            std.log.err("Failed to create user: {s}", .{c.sqlite3_errmsg(self.db)});
+            return error.DatabaseError;
+        }
+    }
+    
+    pub fn getUser(self: *Database, username: []const u8) !?struct {
+        username: []u8,
+        email: []u8,
+        password_hash: []u8,
+        api_token: ?[]u8,
+    } {
+        const sql = "SELECT username, email, password_hash, api_token FROM users WHERE username = ?";
+        
+        var stmt: ?*c.sqlite3_stmt = null;
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+        
+        if (c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null) != c.SQLITE_OK) {
+            return error.DatabaseError;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+        
+        const username_z = try self.allocator.dupeZ(u8, username);
+        defer self.allocator.free(username_z);
+        _ = c.sqlite3_bind_text(stmt, 1, username_z.ptr, -1, null);
+        
+        if (c.sqlite3_step(stmt) != c.SQLITE_ROW) {
+            return null;
+        }
+        
+        const db_username = c.sqlite3_column_text(stmt, 0);
+        const db_email = c.sqlite3_column_text(stmt, 1);
+        const db_password_hash = c.sqlite3_column_text(stmt, 2);
+        const db_api_token = c.sqlite3_column_text(stmt, 3);
+        
+        return .{
+            .username = try self.allocator.dupe(u8, std.mem.span(db_username)),
+            .email = try self.allocator.dupe(u8, std.mem.span(db_email)),
+            .password_hash = try self.allocator.dupe(u8, std.mem.span(db_password_hash)),
+            .api_token = if (db_api_token != null) try self.allocator.dupe(u8, std.mem.span(db_api_token)) else null,
+        };
+    }
+    
+    pub fn userExists(self: *Database, username: []const u8) !bool {
+        const sql = "SELECT 1 FROM users WHERE username = ? LIMIT 1";
+        
+        var stmt: ?*c.sqlite3_stmt = null;
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+        
+        if (c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null) != c.SQLITE_OK) {
+            return error.DatabaseError;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+        
+        const username_z = try self.allocator.dupeZ(u8, username);
+        defer self.allocator.free(username_z);
+        _ = c.sqlite3_bind_text(stmt, 1, username_z.ptr, -1, null);
+        
+        return c.sqlite3_step(stmt) == c.SQLITE_ROW;
+    }
 };

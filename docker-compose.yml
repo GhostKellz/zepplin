@@ -17,14 +17,16 @@ services:
       - ./backups:/app/backups
       - ./logs:/app/logs
     environment:
-      - ZEPPLIN_VERSION=0.4.0
-      - ZEPPLIN_DATA_DIR=/app/data
+      - ZEPPLIN_VERSION=0.5.0
       - ZEPPLIN_PORT=8080
+      - ZEPPLIN_BIND_ADDRESS=0.0.0.0
+      - ZEPPLIN_SECRET_KEY=${ZEPPLIN_SECRET_KEY:-insecure-default-change-me}
+      - ZEPPLIN_DB_PATH=/app/data/zepplin.db
+      - ZEPPLIN_STORAGE_PATH=/app/data
       - ZEPPLIN_DOMAIN=${ZEPPLIN_DOMAIN:-localhost}
       - ZEPPLIN_REGISTRY_NAME=${ZEPPLIN_REGISTRY_NAME:-Zepplin Registry}
       - ZEPPLIN_LOG_LEVEL=${ZEPPLIN_LOG_LEVEL:-info}
-      - ZEPPLIN_MAX_PACKAGE_SIZE=${ZEPPLIN_MAX_PACKAGE_SIZE:-50MB}
-      - ZEPPLIN_ENABLE_WASM=true
+      - ZEPPLIN_ZIGISTRY_URL=${ZEPPLIN_ZIGISTRY_URL:-}
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s

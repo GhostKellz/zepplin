@@ -200,6 +200,37 @@ a:hover {
     box-shadow: inset 0 -2px 0 var(--lightning-500);
 }
 
+/* Auth Navigation */
+#auth-nav {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-left: auto;
+}
+
+.nav-user {
+    color: var(--text-primary);
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    background: rgba(255, 214, 10, 0.1);
+    border-radius: var(--border-radius-sm);
+    border: 1px solid rgba(255, 214, 10, 0.2);
+}
+
+.nav-btn {
+    background: var(--lightning-500);
+    color: var(--ocean-950);
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.nav-btn:hover {
+    background: var(--lightning-400);
+    color: var(--ocean-950);
+}
+
 /* Hero Section */
 .hero {
     padding: calc(var(--header-height) + 5rem) 0 5rem;

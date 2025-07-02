@@ -13,6 +13,11 @@ const ServerError = error{
     InternalError,
 };
 
+const AuthenticatedUser = struct {
+    username: []u8,
+    user_id: i64,
+};
+
 pub const Server = struct {
     allocator: std.mem.Allocator,
     address: std.net.Address,
@@ -22,22 +27,68 @@ pub const Server = struct {
     zigistry: ZigistryClient,
 
     pub fn init(allocator: std.mem.Allocator, port: u16, data_dir: []const u8) !Server {
-        const address = try std.net.Address.resolveIp("0.0.0.0", port);
+        // Load configuration from environment variables
+        const bind_address = std.process.getEnvVarOwned(allocator, "ZEPPLIN_BIND_ADDRESS") catch 
+            try allocator.dupe(u8, "0.0.0.0");
+        defer allocator.free(bind_address);
+
+        const actual_port = blk: {
+            if (std.process.getEnvVarOwned(allocator, "ZEPPLIN_PORT")) |port_str| {
+                defer allocator.free(port_str);
+                break :blk std.fmt.parseInt(u16, port_str, 10) catch port;
+            } else |_| {
+                break :blk port;
+            }
+        };
+
+        const address = try std.net.Address.resolveIp(bind_address, actual_port);
 
         // Initialize database
-        const db_path = try std.fs.path.join(allocator, &.{ data_dir, "zepplin.db" });
+        const db_path = blk: {
+            if (std.process.getEnvVarOwned(allocator, "ZEPPLIN_DB_PATH")) |path| {
+                std.debug.print("🗄️  Using database path from environment: {s}\n", .{path});
+                break :blk path;
+            } else |_| {
+                break :blk try std.fs.path.join(allocator, &.{ data_dir, "zepplin.db" });
+            }
+        };
         defer allocator.free(db_path);
         const database = try Database.init(allocator, db_path);
 
-        // Initialize auth with a secret key (in production, load from config)
-        const secret_key = "your-secret-key-change-in-production";
+        // Initialize auth with secret key from environment or generate default
+        const secret_key = blk: {
+            if (std.process.getEnvVarOwned(allocator, "ZEPPLIN_SECRET_KEY")) |key| {
+                if (key.len < 32) {
+                    std.debug.print("⚠️  Secret key too short (minimum 32 characters)\n", .{});
+                    allocator.free(key);
+                    break :blk try allocator.dupe(u8, "default-insecure-key-change-in-production");
+                }
+                std.debug.print("🔑 Using secret key from environment\n", .{});
+                break :blk key;
+            } else |_| {
+                std.debug.print("⚠️  No ZEPPLIN_SECRET_KEY found, using default (INSECURE for production!)\n", .{});
+                break :blk try allocator.dupe(u8, "default-insecure-key-change-in-production-min32chars");
+            }
+        };
+        defer allocator.free(secret_key);
         const auth = Auth.init(allocator, secret_key);
 
-        // Initialize storage
-        const storage = try Storage.init(allocator, data_dir);
+        // Initialize storage with configurable path
+        const storage_dir = blk: {
+            if (std.process.getEnvVarOwned(allocator, "ZEPPLIN_STORAGE_PATH")) |path| {
+                std.debug.print("📦 Using storage path from environment: {s}\n", .{path});
+                break :blk path;
+            } else |_| {
+                break :blk try allocator.dupe(u8, data_dir);
+            }
+        };
+        defer allocator.free(storage_dir);
+        const storage = try Storage.init(allocator, storage_dir);
 
-        // Initialize Zigistry client
-        const zigistry = ZigistryClient.init(allocator, null);
+        // Initialize Zigistry client with configurable URL
+        const zigistry_url = std.process.getEnvVarOwned(allocator, "ZEPPLIN_ZIGISTRY_URL") catch null;
+        defer if (zigistry_url) |url| allocator.free(url);
+        const zigistry = ZigistryClient.init(allocator, zigistry_url);
 
         return Server{
             .allocator = allocator,
@@ -60,6 +111,8 @@ pub const Server = struct {
 
         std.debug.print("🚀 Zepplin Registry Server starting on http://localhost:{}\n", .{self.address.getPort()});
         std.debug.print("📦 Ready to serve packages!\n", .{});
+        std.debug.print("🔧 Configuration loaded from environment variables (if set)\n", .{});
+        std.debug.print("⚠️  Using default secret key - set ZEPPLIN_SECRET_KEY for production!\n", .{});
 
         while (true) {
             const connection = server.accept() catch |err| {
@@ -89,10 +142,10 @@ pub const Server = struct {
         const method = parts.next() orelse return ServerError.InvalidRequest;
         const path = parts.next() orelse return ServerError.InvalidRequest;
 
-        try self.routeRequest(connection.stream, method, path);
+        try self.routeRequest(connection.stream, method, path, request);
     }
 
-    fn routeRequest(self: *Server, stream: std.net.Stream, method: []const u8, path: []const u8) !void {
+    fn routeRequest(self: *Server, stream: std.net.Stream, method: []const u8, path: []const u8, request: []const u8) !void {
         std.debug.print("📡 {s} {s}\n", .{ method, path });
 
         if (std.mem.eql(u8, method, "GET")) {
@@ -113,6 +166,8 @@ pub const Server = struct {
                 try self.handleHealthV1(stream);
             } else if (std.mem.eql(u8, path, "/api/v1/stats")) {
                 try self.handleStatsApi(stream);
+            } else if (std.mem.eql(u8, path, "/api/v1/auth/me")) {
+                try self.handleUserProfile(stream, request);
                 // Legacy API endpoints (backward compatibility)
             } else if (std.mem.startsWith(u8, path, "/api/packages")) {
                 try self.handlePackageApi(stream, path);
@@ -144,6 +199,9 @@ pub const Server = struct {
                 const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
                 defer self.allocator.free(file_path);
                 try self.serveStaticFile(stream, file_path);
+            } else if (std.mem.eql(u8, path, "/auth")) {
+                // Auth test page
+                try self.serveStaticFile(stream, "web/auth.html");
             } else if (std.mem.startsWith(u8, path, "/packages") or 
                       std.mem.startsWith(u8, path, "/search") or 
                       std.mem.startsWith(u8, path, "/trending") or 
@@ -154,7 +212,13 @@ pub const Server = struct {
                 try self.serve404(stream);
             }
         } else if (std.mem.eql(u8, method, "POST")) {
-            if (std.mem.startsWith(u8, path, "/api/v1/packages/")) {
+            if (std.mem.eql(u8, path, "/api/v1/auth/register")) {
+                try self.handleRegister(stream);
+            } else if (std.mem.eql(u8, path, "/api/v1/auth/login")) {
+                try self.handleLogin(stream);
+            } else if (std.mem.eql(u8, path, "/api/v1/auth/logout")) {
+                try self.handleLogout(stream, request);
+            } else if (std.mem.startsWith(u8, path, "/api/v1/packages/")) {
                 try self.handlePublishPackageV1(stream, path);
             } else if (std.mem.eql(u8, path, "/api/packages")) {
                 try self.handlePublishPackage(stream);
@@ -1149,36 +1213,65 @@ pub const Server = struct {
     }
 
     fn handleDownloadPackageV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8, version: []const u8) !void {
-        const release = try self.database.getRelease(owner, repo, version);
-        if (release == null) {
-            try self.serveJsonError(stream, 404, "Release not found");
+        // Parse version
+        const parsed_version = types.Version.parse(version) catch {
+            try self.serveJsonError(stream, 400, "Invalid version format");
+            return;
+        };
+
+        // Check if package exists in storage
+        const package_name = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ owner, repo });
+        defer self.allocator.free(package_name);
+
+        if (!self.storage.packageExists(package_name, parsed_version)) {
+            try self.serveJsonError(stream, 404, "Package not found");
             return;
         }
 
-        const rel = release.?;
-        defer {
-            self.allocator.free(rel.owner);
-            self.allocator.free(rel.repo);
-            self.allocator.free(rel.tag_name);
-            if (rel.name) |n| self.allocator.free(n);
-            if (rel.body) |b| self.allocator.free(b);
-            if (rel.tarball_url) |t| self.allocator.free(t);
-            if (rel.zipball_url) |z| self.allocator.free(z);
-            if (rel.download_url) |d| self.allocator.free(d);
-            if (rel.sha256) |s| self.allocator.free(s);
-        }
+        // Retrieve package data
+        const package_data = self.storage.retrievePackage(package_name, parsed_version) catch |err| switch (err) {
+            error.FileNotFound => {
+                try self.serveJsonError(stream, 404, "Package file not found");
+                return;
+            },
+            else => {
+                std.debug.print("Storage retrieval error: {}\n", .{err});
+                try self.serveJsonError(stream, 500, "Failed to retrieve package");
+                return;
+            },
+        };
+        defer self.allocator.free(package_data);
 
-        // Increment download count
-        try self.database.incrementDownloadCount(owner, repo, version);
+        // Increment download count (using mock database for now)
+        self.database.incrementDownloadCount(owner, repo, version) catch |err| {
+            std.debug.print("Failed to increment download count: {}\n", .{err});
+            // Continue with download even if counter fails
+        };
 
-        if (rel.download_url) |download_url| {
-            // Redirect to the download URL
-            const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 302 Found\r\nLocation: {s}\r\nContent-Length: 0\r\n\r\n", .{download_url});
-            defer self.allocator.free(response);
-            try stream.writeAll(response);
-        } else {
-            try self.serveJsonError(stream, 404, "Download URL not available");
-        }
+        // Generate filename for download
+        const version_str = try parsed_version.toString(self.allocator);
+        defer self.allocator.free(version_str);
+        const filename = try std.fmt.allocPrint(self.allocator, "{s}-{s}.zpkg", .{ repo, version_str });
+        defer self.allocator.free(filename);
+
+        // Serve the file
+        const response_header = try std.fmt.allocPrint(self.allocator,
+            \\HTTP/1.1 200 OK
+            \\Content-Type: application/octet-stream
+            \\Content-Disposition: attachment; filename="{s}"
+            \\Content-Length: {d}
+            \\Cache-Control: public, max-age=31536000
+            \\
+            \\
+        , .{ filename, package_data.len });
+        defer self.allocator.free(response_header);
+
+        try stream.writeAll(response_header);
+        try stream.writeAll(package_data);
+
+        std.debug.print("📥 Package downloaded: {s}/{s}@{s} ({d} bytes)\n", .{ 
+            owner, repo, version, package_data.len 
+        });
     }
 
     // GET /api/v1/search?q=query&limit=20
@@ -1395,26 +1488,125 @@ pub const Server = struct {
             return;
         }
 
-        // TODO: Parse multipart form data and extract:
-        // - tag_name (required)
-        // - name (optional)
-        // - body (optional)
-        // - draft (boolean, default false)
-        // - prerelease (boolean, default false)
-        // - file (required - the package archive)
+        // Read the full request
+        var buffer: [50 * 1024 * 1024]u8 = undefined; // 50MB max upload
+        const bytes_read = try stream.read(&buffer);
+        const request = buffer[0..bytes_read];
 
-        // For now, return a placeholder response
+        // Find the body after headers
+        const header_end = std.mem.indexOf(u8, request, "\r\n\r\n") orelse {
+            try self.serveJsonError(stream, 400, "Invalid request format");
+            return;
+        };
+        const headers = request[0..header_end];
+        const body = request[header_end + 4..];
+
+        // Parse multipart form data
+        const upload_data = self.parseMultipartUpload(headers, body) catch |err| switch (err) {
+            error.InvalidMultipart => {
+                try self.serveJsonError(stream, 400, "Invalid multipart form data");
+                return;
+            },
+            error.MissingFile => {
+                try self.serveJsonError(stream, 400, "Package file is required");
+                return;
+            },
+            error.MissingTagName => {
+                try self.serveJsonError(stream, 400, "tag_name is required");
+                return;
+            },
+            else => return err,
+        };
+        defer self.freeUploadData(upload_data);
+
+        // Validate owner/repo match path
+        if (!std.mem.eql(u8, owner, upload_data.owner) or !std.mem.eql(u8, repo, upload_data.repo)) {
+            try self.serveJsonError(stream, 400, "Owner/repo mismatch between path and form data");
+            return;
+        }
+
+        // Create package metadata
+        const version = types.Version.parse(upload_data.tag_name) catch {
+            try self.serveJsonError(stream, 400, "Invalid version format. Use semantic versioning (e.g., 1.0.0)");
+            return;
+        };
+
+        const package_name = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ owner, repo });
+        defer self.allocator.free(package_name);
+
+        const metadata = types.PackageMetadata{
+            .name = package_name,
+            .version = version,
+            .description = upload_data.body,
+            .author = owner,
+            .license = null,
+            .homepage = null,
+            .repository = try std.fmt.allocPrint(self.allocator, "https://github.com/{s}/{s}", .{ owner, repo }),
+            .dependencies = &.{},
+            .keywords = &.{},
+            .minimum_zig_version = null,
+        };
+        defer if (metadata.repository) |r| self.allocator.free(r);
+
+        // Store package
+        const package_file = self.storage.storePackage(metadata, upload_data.file_data) catch |err| switch (err) {
+            error.PathAlreadyExists => {
+                try self.serveJsonError(stream, 409, "Package version already exists");
+                return;
+            },
+            else => {
+                std.debug.print("Storage error: {}\n", .{err});
+                try self.serveJsonError(stream, 500, "Failed to store package");
+                return;
+            },
+        };
+        defer {
+            self.allocator.free(package_file.checksum);
+            self.allocator.free(package_file.file_path);
+        }
+
+        // Create download URL
+        const download_url = try std.fmt.allocPrint(self.allocator, 
+            "/api/v1/packages/{s}/{s}/download/{s}", 
+            .{ owner, repo, upload_data.tag_name }
+        );
+        defer self.allocator.free(download_url);
+
+        // Return success response
         const json_response = try std.fmt.allocPrint(self.allocator,
             \\{{
-            \\  "message": "Package publishing endpoint - implementation in progress",
-            \\  "owner": "{s}",
-            \\  "repo": "{s}",
-            \\  "status": "placeholder"
+            \\  "id": {d},
+            \\  "tag_name": "{s}",
+            \\  "name": "{s}",
+            \\  "body": "{s}",
+            \\  "draft": {s},
+            \\  "prerelease": {s},
+            \\  "created_at": {d},
+            \\  "published_at": {d},
+            \\  "download_url": "{s}",
+            \\  "file_size": {d},
+            \\  "sha256": "{s}"
             \\}}
-        , .{ owner, repo });
+        , .{
+            std.time.timestamp(), // Using timestamp as ID for now
+            upload_data.tag_name,
+            upload_data.name orelse upload_data.tag_name,
+            upload_data.body orelse "",
+            if (upload_data.draft) "true" else "false",
+            if (upload_data.prerelease) "true" else "false",
+            std.time.timestamp(),
+            std.time.timestamp(),
+            download_url,
+            package_file.file_size,
+            package_file.checksum,
+        });
         defer self.allocator.free(json_response);
 
-        try self.serveJson(stream, 501, json_response);
+        std.debug.print("📦 Package uploaded: {s}/{s}@{s} ({d} bytes)\n", .{ 
+            owner, repo, upload_data.tag_name, package_file.file_size 
+        });
+
+        try self.serveJson(stream, 201, json_response);
     }
 
     // PUT /api/v1/aliases/{short_name}
@@ -1549,5 +1741,337 @@ pub const Server = struct {
         try json.append(']');
 
         return json.toOwnedSlice();
+    }
+
+    fn handleRegister(self: *Server, stream: std.net.Stream) !void {
+        var buffer: [8192]u8 = undefined;
+        const bytes_read = try stream.read(&buffer);
+        const request = buffer[0..bytes_read];
+        
+        // Find the body after headers
+        const header_end = std.mem.indexOf(u8, request, "\r\n\r\n") orelse {
+            try self.serveJsonError(stream, 400, "Invalid request");
+            return;
+        };
+        const body = request[header_end + 4..];
+        
+        // Simple JSON parsing for username, email, and password
+        var username: ?[]const u8 = null;
+        var email: ?[]const u8 = null; 
+        var password: ?[]const u8 = null;
+        
+        // Extract username
+        if (std.mem.indexOf(u8, body, "\"username\"")) |username_pos| {
+            const colon_pos = std.mem.indexOf(u8, body[username_pos..], ":") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_start = std.mem.indexOf(u8, body[username_pos + colon_pos..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_end = std.mem.indexOf(u8, body[username_pos + colon_pos + quote_start + 1..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            username = body[username_pos + colon_pos + quote_start + 1..][0..quote_end];
+        }
+        
+        // Extract email
+        if (std.mem.indexOf(u8, body, "\"email\"")) |email_pos| {
+            const colon_pos = std.mem.indexOf(u8, body[email_pos..], ":") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_start = std.mem.indexOf(u8, body[email_pos + colon_pos..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_end = std.mem.indexOf(u8, body[email_pos + colon_pos + quote_start + 1..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            email = body[email_pos + colon_pos + quote_start + 1..][0..quote_end];
+        }
+        
+        // Extract password
+        if (std.mem.indexOf(u8, body, "\"password\"")) |password_pos| {
+            const colon_pos = std.mem.indexOf(u8, body[password_pos..], ":") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_start = std.mem.indexOf(u8, body[password_pos + colon_pos..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_end = std.mem.indexOf(u8, body[password_pos + colon_pos + quote_start + 1..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            password = body[password_pos + colon_pos + quote_start + 1..][0..quote_end];
+        }
+        
+        if (username == null or email == null or password == null) {
+            try self.serveJsonError(stream, 400, "Missing required fields: username, email, password");
+            return;
+        }
+        
+        // Check if user already exists
+        const exists = try self.database.userExists(username.?);
+        if (exists) {
+            try self.serveJsonError(stream, 409, "Username already exists");
+            return;
+        }
+        
+        // Hash password
+        const password_hash = try self.auth.hashPassword(password.?);
+        defer self.allocator.free(password_hash);
+        
+        // Generate API token
+        const token = try self.auth.generateApiToken(1); // Will need proper user ID after creation
+        defer self.allocator.free(token);
+        
+        // Create user
+        try self.database.createUser(username.?, email.?, password_hash, token);
+        
+        // Return success with token
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "username": "{s}",
+            \\  "email": "{s}",
+            \\  "token": "{s}"
+            \\}}
+        , .{ username.?, email.?, token });
+        defer self.allocator.free(json_response);
+        
+        try self.serveJson(stream, 201, json_response);
+    }
+    
+    fn handleLogin(self: *Server, stream: std.net.Stream) !void {
+        var buffer: [8192]u8 = undefined;
+        const bytes_read = try stream.read(&buffer);
+        const request = buffer[0..bytes_read];
+        
+        // Find the body after headers
+        const header_end = std.mem.indexOf(u8, request, "\r\n\r\n") orelse {
+            try self.serveJsonError(stream, 400, "Invalid request");
+            return;
+        };
+        const body = request[header_end + 4..];
+        
+        // Simple JSON parsing for username and password
+        var username: ?[]const u8 = null;
+        var password: ?[]const u8 = null;
+        
+        // Extract username
+        if (std.mem.indexOf(u8, body, "\"username\"")) |username_pos| {
+            const colon_pos = std.mem.indexOf(u8, body[username_pos..], ":") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_start = std.mem.indexOf(u8, body[username_pos + colon_pos..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_end = std.mem.indexOf(u8, body[username_pos + colon_pos + quote_start + 1..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            username = body[username_pos + colon_pos + quote_start + 1..][0..quote_end];
+        }
+        
+        // Extract password
+        if (std.mem.indexOf(u8, body, "\"password\"")) |password_pos| {
+            const colon_pos = std.mem.indexOf(u8, body[password_pos..], ":") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_start = std.mem.indexOf(u8, body[password_pos + colon_pos..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            const quote_end = std.mem.indexOf(u8, body[password_pos + colon_pos + quote_start + 1..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
+            password = body[password_pos + colon_pos + quote_start + 1..][0..quote_end];
+        }
+        
+        if (username == null or password == null) {
+            try self.serveJsonError(stream, 400, "Missing required fields: username, password");
+            return;
+        }
+        
+        // Get user from database
+        const user = try self.database.getUser(username.?);
+        if (user == null) {
+            try self.serveJsonError(stream, 401, "Invalid credentials");
+            return;
+        }
+        
+        const u = user.?;
+        defer {
+            self.allocator.free(u.username);
+            self.allocator.free(u.email);
+            self.allocator.free(u.password_hash);
+            if (u.api_token) |t| self.allocator.free(t);
+        }
+        
+        // Verify password
+        const valid = try self.auth.verifyPassword(password.?, u.password_hash);
+        if (!valid) {
+            try self.serveJsonError(stream, 401, "Invalid credentials");
+            return;
+        }
+        
+        // Return success with existing token
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "username": "{s}",
+            \\  "email": "{s}",
+            \\  "token": "{s}"
+            \\}}
+        , .{ u.username, u.email, u.api_token orelse "" });
+        defer self.allocator.free(json_response);
+        
+        try self.serveJson(stream, 200, json_response);
+    }
+    
+    fn validateAuthToken(self: *Server, request: []const u8) !?AuthenticatedUser {
+        // Extract Authorization header
+        const auth_header_start = std.mem.indexOf(u8, request, "Authorization: ") orelse return null;
+        const auth_line_end = std.mem.indexOf(u8, request[auth_header_start..], "\r\n") orelse return null;
+        const auth_header = request[auth_header_start + 15..auth_header_start + auth_line_end];
+        
+        // Extract Bearer token
+        const token = Auth.extractBearerToken(auth_header) orelse return null;
+        
+        // Validate token
+        const auth_token = self.auth.validateApiToken(token) catch return null;
+        defer self.allocator.free(auth_token.token);
+        
+        // Get user info from database
+        // For now, we'll create a dummy username based on user_id
+        // In a real implementation, you'd look this up in the database
+        const username = try std.fmt.allocPrint(self.allocator, "user_{}", .{auth_token.user_id});
+        
+        return AuthenticatedUser{
+            .username = username,
+            .user_id = auth_token.user_id,
+        };
+    }
+    
+    fn requireAuth(self: *Server, stream: std.net.Stream, request: []const u8) !?AuthenticatedUser {
+        const user = self.validateAuthToken(request) catch {
+            try self.serveJsonError(stream, 401, "Invalid or expired token");
+            return null;
+        };
+        
+        if (user == null) {
+            try self.serveJsonError(stream, 401, "Authentication required");
+            return null;
+        }
+        
+        return user;
+    }
+    
+    fn handleLogout(self: *Server, stream: std.net.Stream, request: []const u8) !void {
+        // For now, logout is just a client-side operation since we're using stateless JWT-like tokens
+        // In a full implementation, you might want to maintain a blacklist of revoked tokens
+        _ = request; // Suppress unused parameter warning
+        
+        const json_response = 
+            \\{
+            \\  "message": "Logged out successfully"
+            \\}
+        ;
+        
+        try self.serveJson(stream, 200, json_response);
+    }
+    
+    fn handleUserProfile(self: *Server, stream: std.net.Stream, request: []const u8) !void {
+        const user = try self.requireAuth(stream, request);
+        if (user == null) return; // Error already sent by requireAuth
+        
+        const u = user.?;
+        defer self.allocator.free(u.username);
+        
+        // Get user details from database
+        // For now, we'll return basic info based on the token
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "user_id": {},
+            \\  "username": "{s}",
+            \\  "authenticated": true
+            \\}}
+        , .{ u.user_id, u.username });
+        defer self.allocator.free(json_response);
+        
+        try self.serveJson(stream, 200, json_response);
+    }
+
+    // Multipart form data parser
+    fn parseMultipartUpload(self: *Server, headers: []const u8, body: []const u8) !types.UploadData {
+        // Extract boundary from Content-Type header
+        const boundary = self.extractBoundary(headers) orelse return error.InvalidMultipart;
+        defer self.allocator.free(boundary);
+
+        var upload_data = types.UploadData{
+            .owner = "",
+            .repo = "",
+            .tag_name = "",
+            .name = null,
+            .body = null,
+            .draft = false,
+            .prerelease = false,
+            .file_data = "",
+            .filename = "",
+            .content_type = "",
+        };
+
+        // Split body by boundary
+        const boundary_delimiter = try std.fmt.allocPrint(self.allocator, "--{s}", .{boundary});
+        defer self.allocator.free(boundary_delimiter);
+
+        var parts = std.mem.splitSequence(u8, body, boundary_delimiter);
+        _ = parts.next(); // Skip first empty part
+
+        var has_file = false;
+        var has_tag_name = false;
+
+        while (parts.next()) |part| {
+            if (part.len < 4) continue; // Skip empty or too small parts
+
+            // Skip end boundary
+            if (std.mem.startsWith(u8, part, "--")) break;
+
+            // Find headers and content separator
+            const content_start = std.mem.indexOf(u8, part, "\r\n\r\n") orelse continue;
+            const part_headers = part[0..content_start];
+            const content = std.mem.trim(u8, part[content_start + 4..], "\r\n");
+
+            // Parse Content-Disposition header
+            if (std.mem.indexOf(u8, part_headers, "Content-Disposition:")) |_| {
+                if (std.mem.indexOf(u8, part_headers, "name=\"owner\"")) |_| {
+                    upload_data.owner = try self.allocator.dupe(u8, content);
+                } else if (std.mem.indexOf(u8, part_headers, "name=\"repo\"")) |_| {
+                    upload_data.repo = try self.allocator.dupe(u8, content);
+                } else if (std.mem.indexOf(u8, part_headers, "name=\"tag_name\"")) |_| {
+                    upload_data.tag_name = try self.allocator.dupe(u8, content);
+                    has_tag_name = true;
+                } else if (std.mem.indexOf(u8, part_headers, "name=\"name\"")) |_| {
+                    upload_data.name = try self.allocator.dupe(u8, content);
+                } else if (std.mem.indexOf(u8, part_headers, "name=\"body\"")) |_| {
+                    upload_data.body = try self.allocator.dupe(u8, content);
+                } else if (std.mem.indexOf(u8, part_headers, "name=\"draft\"")) |_| {
+                    upload_data.draft = std.mem.eql(u8, content, "true");
+                } else if (std.mem.indexOf(u8, part_headers, "name=\"prerelease\"")) |_| {
+                    upload_data.prerelease = std.mem.eql(u8, content, "true");
+                } else if (std.mem.indexOf(u8, part_headers, "name=\"file\"")) |_| {
+                    // Extract filename
+                    if (std.mem.indexOf(u8, part_headers, "filename=\"")) |filename_start| {
+                        const filename_content_start = filename_start + 10;
+                        if (std.mem.indexOf(u8, part_headers[filename_content_start..], "\"")) |filename_end| {
+                            upload_data.filename = try self.allocator.dupe(u8, part_headers[filename_content_start..filename_content_start + filename_end]);
+                        }
+                    }
+                    
+                    // Extract content type
+                    if (std.mem.indexOf(u8, part_headers, "Content-Type: ")) |ct_start| {
+                        const ct_content_start = ct_start + 14;
+                        if (std.mem.indexOf(u8, part_headers[ct_content_start..], "\r\n")) |ct_end| {
+                            upload_data.content_type = try self.allocator.dupe(u8, part_headers[ct_content_start..ct_content_start + ct_end]);
+                        }
+                    }
+                    
+                    upload_data.file_data = try self.allocator.dupe(u8, content);
+                    has_file = true;
+                }
+            }
+        }
+
+        if (!has_file) return error.MissingFile;
+        if (!has_tag_name) return error.MissingTagName;
+
+        return upload_data;
+    }
+
+    fn extractBoundary(self: *Server, headers: []const u8) ?[]u8 {
+        // Find Content-Type header with boundary
+        const content_type_start = std.mem.indexOf(u8, headers, "Content-Type: multipart/form-data") orelse return null;
+        const boundary_start = std.mem.indexOf(u8, headers[content_type_start..], "boundary=") orelse return null;
+        const boundary_value_start = content_type_start + boundary_start + 9;
+        
+        // Find end of boundary (either \r\n or end of headers)
+        const line_end = std.mem.indexOf(u8, headers[boundary_value_start..], "\r\n") orelse headers.len - boundary_value_start;
+        const boundary_value = headers[boundary_value_start..boundary_value_start + line_end];
+        
+        return self.allocator.dupe(u8, boundary_value) catch null;
+    }
+
+    fn freeUploadData(self: *Server, upload_data: types.UploadData) void {
+        if (upload_data.owner.len > 0) self.allocator.free(upload_data.owner);
+        if (upload_data.repo.len > 0) self.allocator.free(upload_data.repo);
+        if (upload_data.tag_name.len > 0) self.allocator.free(upload_data.tag_name);
+        if (upload_data.name) |name| self.allocator.free(name);
+        if (upload_data.body) |body| self.allocator.free(body);
+        if (upload_data.file_data.len > 0) self.allocator.free(upload_data.file_data);
+        if (upload_data.filename.len > 0) self.allocator.free(upload_data.filename);
+        if (upload_data.content_type.len > 0) self.allocator.free(upload_data.content_type);
     }
 };

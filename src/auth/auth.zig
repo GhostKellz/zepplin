@@ -37,6 +37,7 @@ pub const Auth = struct {
 
         var hash: [32]u8 = undefined;
         try crypto.pwhash.argon2.kdf(
+            self.allocator,
             &hash,
             password,
             &salt,
@@ -52,7 +53,7 @@ pub const Auth = struct {
         return result;
     }
 
-    pub fn verifyPassword(_: *Auth, password: []const u8, stored_hash: []const u8) !bool {
+    pub fn verifyPassword(self: *Auth, password: []const u8, stored_hash: []const u8) !bool {
         if (stored_hash.len != 48) return false;
 
         const salt = stored_hash[0..16];
@@ -60,6 +61,7 @@ pub const Auth = struct {
 
         var computed_hash: [32]u8 = undefined;
         try crypto.pwhash.argon2.kdf(
+            self.allocator,
             &computed_hash,
             password,
             salt,
@@ -80,7 +82,7 @@ pub const Auth = struct {
 
         // Simple HMAC-based token (in production, use JWT)
         var hmac: [32]u8 = undefined;
-        crypto.auth.hmac.sha256.Hmac.create(&hmac, payload, self.secret_key);
+        crypto.auth.hmac.sha2.HmacSha256.create(&hmac, payload, self.secret_key);
 
         // Encode as base64
         const token_data = try self.allocator.alloc(u8, payload.len + 32);
@@ -111,7 +113,7 @@ pub const Auth = struct {
 
         // Verify HMAC
         var computed_hmac: [32]u8 = undefined;
-        crypto.auth.hmac.sha256.Hmac.create(&computed_hmac, payload, self.secret_key);
+        crypto.auth.hmac.sha2.HmacSha256.create(&computed_hmac, payload, self.secret_key);
 
         if (!crypto.utils.timingSafeEql([32]u8, computed_hmac, expected_hmac[0..32].*)) {
             return AuthError.InvalidToken;
@@ -122,7 +124,7 @@ pub const Auth = struct {
         var expires_at: i64 = 0;
 
         // Simple JSON parsing for "user_id" and "exp"
-        var iter = std.mem.split(u8, payload, ",");
+        var iter = std.mem.splitScalar(u8, payload, ',');
         while (iter.next()) |part| {
             if (std.mem.indexOf(u8, part, "user_id")) |_| {
                 const colon_pos = std.mem.indexOf(u8, part, ":") orelse continue;

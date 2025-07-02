@@ -10,6 +10,7 @@ class ZepplinApp {
     async init() {
         this.setupEventListeners();
         await this.loadInitialData();
+        await this.setupAuth();
         this.hideLoadingApp();
     }
 
@@ -370,6 +371,77 @@ class ZepplinApp {
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
         };
+    }
+
+    // Authentication methods
+    async setupAuth() {
+        const token = localStorage.getItem('zepplin_token');
+        const authNav = document.getElementById('auth-nav');
+        
+        if (token) {
+            // Check if token is valid
+            try {
+                const response = await fetch('/api/v1/auth/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const user = await response.json();
+                    this.renderAuthenticatedNav(authNav, user);
+                } else {
+                    // Token invalid, clear it
+                    localStorage.removeItem('zepplin_token');
+                    localStorage.removeItem('zepplin_username');
+                    this.renderUnauthenticatedNav(authNav);
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                this.renderUnauthenticatedNav(authNav);
+            }
+        } else {
+            this.renderUnauthenticatedNav(authNav);
+        }
+    }
+    
+    renderAuthenticatedNav(authNav, user) {
+        authNav.innerHTML = `
+            <span class="nav-user">Welcome, ${user.username}!</span>
+            <a href="/publish" class="nav-link">Publish</a>
+            <button class="nav-link nav-btn" onclick="window.zepplin.logout()">Logout</button>
+        `;
+    }
+    
+    renderUnauthenticatedNav(authNav) {
+        authNav.innerHTML = `
+            <a href="/auth" class="nav-link">Login</a>
+            <a href="/auth" class="nav-link nav-btn">Sign Up</a>
+        `;
+    }
+    
+    async logout() {
+        const token = localStorage.getItem('zepplin_token');
+        
+        if (token) {
+            try {
+                await fetch('/api/v1/auth/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+            } catch (error) {
+                console.error('Logout request failed:', error);
+            }
+        }
+        
+        // Clear local storage
+        localStorage.removeItem('zepplin_token');
+        localStorage.removeItem('zepplin_username');
+        
+        // Refresh the page to update UI
+        window.location.reload();
     }
 }
 

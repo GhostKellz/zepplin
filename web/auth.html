@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zepplin Auth - Test Page</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            background: #0f1419; 
+            color: #e6e1dc; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container { 
+            max-width: 400px; 
+            width: 100%;
+            padding: 2rem; 
+        }
+        .form-card {
+            background: #1e2328;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        h2 {
+            color: #f7931e;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            color: #b8b4a3;
+            margin-bottom: 0.5rem;
+        }
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            background: #0f1419;
+            border: 1px solid #39414a;
+            border-radius: 4px;
+            color: #e6e1dc;
+            font-size: 1rem;
+        }
+        input:focus {
+            outline: none;
+            border-color: #36c692;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #36c692;
+            color: #0f1419;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #f7931e;
+        }
+        .message {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .success {
+            background: #36c692;
+            color: #0f1419;
+        }
+        .error {
+            background: #ff5555;
+            color: #f8f8f2;
+        }
+        .token-display {
+            background: #0f1419;
+            padding: 1rem;
+            border-radius: 4px;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="message"></div>
+        
+        <div class="form-card">
+            <h2>Register</h2>
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="reg-username">Username</label>
+                    <input type="text" id="reg-username" required>
+                </div>
+                <div class="form-group">
+                    <label for="reg-email">Email</label>
+                    <input type="email" id="reg-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="reg-password">Password</label>
+                    <input type="password" id="reg-password" required>
+                </div>
+                <button type="submit">Register</button>
+            </form>
+        </div>
+
+        <div class="form-card">
+            <h2>Login</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="login-username">Username</label>
+                    <input type="text" id="login-username" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" required>
+                </div>
+                <button type="submit">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const messageDiv = document.getElementById('message');
+
+        function showMessage(text, type) {
+            messageDiv.innerHTML = `<div class="message ${type}">${text}</div>`;
+            if (type === 'success') {
+                setTimeout(() => messageDiv.innerHTML = '', 5000);
+            }
+        }
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('reg-username').value;
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+
+            try {
+                const response = await fetch('/api/v1/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage(`Registration successful! Your API token:<div class="token-display">${data.token}</div>`, 'success');
+                    document.getElementById('registerForm').reset();
+                } else {
+                    showMessage(data.error || 'Registration failed', 'error');
+                }
+            } catch (error) {
+                showMessage('Network error: ' + error.message, 'error');
+            }
+        });
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+
+            try {
+                const response = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage(`Login successful! Your API token:<div class="token-display">${data.token}</div>`, 'success');
+                    localStorage.setItem('zepplin_token', data.token);
+                    localStorage.setItem('zepplin_username', data.username);
+                    document.getElementById('loginForm').reset();
+                } else {
+                    showMessage(data.error || 'Login failed', 'error');
+                }
+            } catch (error) {
+                showMessage('Network error: ' + error.message, 'error');
+            }
+        });
+    </script>
+</body>
+</html>

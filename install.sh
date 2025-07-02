@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 🚀 Zepplin Registry v0.4.0 - Production Installation Script
+# 🚀 Zepplin Registry v0.5.0 - Production Installation Script
 # Lightning-fast Zig package registry with CK Technology branding
 
 set -euo pipefail  # Exit on any error, undefined variables, or pipe failures
@@ -15,7 +15,7 @@ readonly CYAN='\033[0;36m'
 readonly NC='\033[0m' # No Color
 
 # Configuration
-readonly SCRIPT_VERSION="0.4.0"
+readonly SCRIPT_VERSION="0.5.0"
 readonly INSTALL_DIR="/opt/zepplin"
 readonly SERVICE_USER="zepplin"
 readonly SERVICE_NAME="zepplin"
@@ -233,8 +233,10 @@ ZEPPLIN_PORT=8080
 ZEPPLIN_HOST=0.0.0.0
 
 # Security
-ZEPPLIN_JWT_SECRET=${jwt_secret}
-ZEPPLIN_REQUIRE_AUTH=false
+ZEPPLIN_SECRET_KEY=${jwt_secret}
+ZEPPLIN_BIND_ADDRESS=0.0.0.0
+ZEPPLIN_DB_PATH=/app/data/zepplin.db
+ZEPPLIN_STORAGE_PATH=/app/data
 
 # Performance
 ZEPPLIN_MAX_CONNECTIONS=100
@@ -313,6 +315,19 @@ build_and_start_services() {
         return 1
     fi
     
+    # Give containers time to initialize
+    print_info "Waiting for containers to initialize..."
+    sleep 5
+    
+    # Verify containers are still running
+    if ! docker compose ps --services --filter "status=running" | grep -q "zepplin-registry"; then
+        print_warning "Container may have crashed, checking logs..."
+        docker compose logs --tail=50 zepplin-registry
+        print_info "Attempting to restart..."
+        docker compose restart
+        sleep 5
+    fi
+    
     print_success "Services started successfully"
 }
 
@@ -359,7 +374,11 @@ EOF
     systemctl daemon-reload
     systemctl enable "${SERVICE_NAME}.service"
     
-    print_success "Systemd service created and enabled"
+    # Start the service
+    print_info "Starting systemd service..."
+    systemctl start "${SERVICE_NAME}.service"
+    
+    print_success "Systemd service created, enabled and started"
 }
 
 # Function to wait for service health
@@ -391,12 +410,16 @@ verify_installation() {
     cd "$INSTALL_DIR"
     
     # Check container status
-    if ! docker compose ps --services --filter "status=running" | grep -q "zepplin-registry"; then
+    print_info "Checking container status..."
+    local container_status
+    container_status=$(cd "$INSTALL_DIR" && docker compose ps --format json 2>/dev/null || echo "[]")
+    
+    if ! echo "$container_status" | jq -e '.[] | select(.Service == "zepplin-registry" and .State == "running")' >/dev/null 2>&1; then
         print_error "Zepplin container is not running"
         print_info "Container status:"
-        docker compose ps
+        cd "$INSTALL_DIR" && docker compose ps
         print_info "Recent logs:"
-        docker compose logs --tail=20 zepplin-registry
+        cd "$INSTALL_DIR" && docker compose logs --tail=20 zepplin-registry
         return 1
     fi
     print_info "Container is running ✓"
