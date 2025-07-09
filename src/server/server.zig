@@ -5,6 +5,10 @@ const Auth = @import("../auth/auth.zig").Auth;
 const Storage = @import("../storage/storage.zig").Storage;
 const ZigistryClient = @import("../zigistry/client.zig").ZigistryClient;
 
+const RouteHandler = *const fn (self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) anyerror!void;
+const StaticHandler = *const fn (self: *Server, stream: std.net.Stream, path: []const u8) anyerror!void;
+const PrefixRoute = struct { prefix: []const u8, handler: RouteHandler };
+
 const ServerError = error{
     BindFailed,
     InvalidRequest,
@@ -18,6 +22,153 @@ const AuthenticatedUser = struct {
     user_id: i64,
 };
 
+// Response cache entry
+const CacheEntry = struct {
+    content: []u8,
+    content_type: []const u8,
+    timestamp: i64,
+    ttl: i64,
+    access_count: u32,
+    last_accessed: i64,
+    
+    pub fn isExpired(self: CacheEntry) bool {
+        return std.time.timestamp() > self.timestamp + self.ttl;
+    }
+    
+    pub fn touch(self: *CacheEntry) void {
+        self.access_count += 1;
+        self.last_accessed = std.time.timestamp();
+    }
+};
+
+// LRU Cache for advanced caching
+const LRUCache = struct {
+    const Node = struct {
+        key: []const u8,
+        value: CacheEntry,
+        prev: ?*Node,
+        next: ?*Node,
+    };
+    
+    allocator: std.mem.Allocator,
+    capacity: usize,
+    size: usize,
+    head: ?*Node,
+    tail: ?*Node,
+    map: std.HashMap([]const u8, *Node, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
+    
+    pub fn init(allocator: std.mem.Allocator, capacity: usize) LRUCache {
+        return LRUCache{
+            .allocator = allocator,
+            .capacity = capacity,
+            .size = 0,
+            .head = null,
+            .tail = null,
+            .map = std.HashMap([]const u8, *Node, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
+        };
+    }
+    
+    pub fn deinit(self: *LRUCache) void {
+        var current = self.head;
+        while (current) |node| {
+            const next = node.next;
+            self.allocator.free(node.key);
+            self.allocator.free(node.value.content);
+            self.allocator.destroy(node);
+            current = next;
+        }
+        self.map.deinit();
+    }
+    
+    pub fn get(self: *LRUCache, key: []const u8) ?*CacheEntry {
+        if (self.map.get(key)) |node| {
+            // Move to front (most recently used)
+            self.moveToFront(node);
+            node.value.touch();
+            return &node.value;
+        }
+        return null;
+    }
+    
+    pub fn put(self: *LRUCache, key: []const u8, value: CacheEntry) !void {
+        if (self.map.get(key)) |node| {
+            // Update existing
+            self.allocator.free(node.value.content);
+            node.value = value;
+            node.value.touch();
+            self.moveToFront(node);
+            return;
+        }
+        
+        // Create new node
+        const node = try self.allocator.create(Node);
+        node.key = try self.allocator.dupe(u8, key);
+        node.value = value;
+        node.value.touch();
+        node.prev = null;
+        node.next = self.head;
+        
+        if (self.head) |head| {
+            head.prev = node;
+        }
+        self.head = node;
+        
+        if (self.tail == null) {
+            self.tail = node;
+        }
+        
+        try self.map.put(node.key, node);
+        self.size += 1;
+        
+        // Evict if over capacity
+        if (self.size > self.capacity) {
+            self.evictLRU();
+        }
+    }
+    
+    fn moveToFront(self: *LRUCache, node: *Node) void {
+        if (node == self.head) return;
+        
+        // Remove from current position
+        if (node.prev) |prev| {
+            prev.next = node.next;
+        }
+        if (node.next) |next| {
+            next.prev = node.prev;
+        }
+        if (node == self.tail) {
+            self.tail = node.prev;
+        }
+        
+        // Move to front
+        node.prev = null;
+        node.next = self.head;
+        if (self.head) |head| {
+            head.prev = node;
+        }
+        self.head = node;
+    }
+    
+    fn evictLRU(self: *LRUCache) void {
+        if (self.tail) |tail| {
+            _ = self.map.remove(tail.key);
+            
+            if (tail.prev) |prev| {
+                prev.next = null;
+                self.tail = prev;
+            } else {
+                self.head = null;
+                self.tail = null;
+            }
+            
+            self.allocator.free(tail.key);
+            self.allocator.free(tail.value.content);
+            self.allocator.destroy(tail);
+            self.size -= 1;
+        }
+    }
+};
+
 pub const Server = struct {
     allocator: std.mem.Allocator,
     address: std.net.Address,
@@ -25,6 +176,15 @@ pub const Server = struct {
     auth: Auth,
     storage: Storage,
     zigistry: ZigistryClient,
+    
+    // Route optimization
+    exact_routes: std.HashMap([]const u8, RouteHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
+    prefix_routes: std.ArrayList(PrefixRoute),
+    static_routes: std.HashMap([]const u8, StaticHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
+    
+    // Response caching
+    response_cache: std.HashMap([]const u8, CacheEntry, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
+    file_cache: LRUCache,
 
     pub fn init(allocator: std.mem.Allocator, port: u16, data_dir: []const u8) !Server {
         // Load configuration from environment variables
@@ -90,19 +250,145 @@ pub const Server = struct {
         defer if (zigistry_url) |url| allocator.free(url);
         const zigistry = ZigistryClient.init(allocator, zigistry_url);
 
-        return Server{
+        var server = Server{
             .allocator = allocator,
             .address = address,
             .database = database,
             .auth = auth,
             .storage = storage,
             .zigistry = zigistry,
+            .exact_routes = std.HashMap([]const u8, RouteHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
+            .prefix_routes = std.ArrayList(PrefixRoute).init(allocator),
+            .static_routes = std.HashMap([]const u8, StaticHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
+            .response_cache = std.HashMap([]const u8, CacheEntry, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
+            .file_cache = LRUCache.init(allocator, 100), // Cache up to 100 files
         };
+        
+        // Initialize route tables
+        try server.initRoutes();
+        
+        return server;
     }
 
     pub fn deinit(self: *Server) void {
+        // Clean up cache entries
+        self.cleanupCache(&self.response_cache);
+        
+        self.exact_routes.deinit();
+        self.prefix_routes.deinit();
+        self.static_routes.deinit();
+        self.response_cache.deinit();
+        self.file_cache.deinit();
         self.database.deinit();
         self.storage.deinit();
+    }
+    
+    fn cleanupCache(self: *Server, cache: *std.HashMap([]const u8, CacheEntry, std.hash_map.StringContext, std.hash_map.default_max_load_percentage)) void {
+        var iterator = cache.iterator();
+        while (iterator.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.content);
+        }
+    }
+    
+    fn initRoutes(self: *Server) !void {
+        // Exact route matches
+        try self.exact_routes.put("/", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.serveStaticFile(stream, "web/templates/index.html");
+            }
+        }.handler);
+        
+        try self.exact_routes.put("/health", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.handleHealthSimple(stream);
+            }
+        }.handler);
+        
+        try self.exact_routes.put("/api/v1/registry/config", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.handleRegistryConfigV1(stream);
+            }
+        }.handler);
+        
+        try self.exact_routes.put("/api/v1/health", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.handleHealthV1(stream);
+            }
+        }.handler);
+        
+        try self.exact_routes.put("/api/v1/stats", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.handleStatsApi(stream);
+            }
+        }.handler);
+        
+        try self.exact_routes.put("/api/v1/auth/me", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request_allocator;
+                try server.handleUserProfile(stream, request);
+            }
+        }.handler);
+        
+        // Prefix route matches
+        try self.prefix_routes.append(.{ .prefix = "/api/v1/packages/", .handler = struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = request; _ = request_allocator;
+                try server.handlePackageApiV1(stream, path);
+            }
+        }.handler });
+        
+        try self.prefix_routes.append(.{ .prefix = "/api/v1/search", .handler = struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = request; _ = request_allocator;
+                try server.handleSearchApiV1(stream, path);
+            }
+        }.handler });
+        
+        try self.prefix_routes.append(.{ .prefix = "/api/v1/resolve/", .handler = struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = request; _ = request_allocator;
+                try server.handleResolveApiV1(stream, path);
+            }
+        }.handler });
+        
+        // Static file routes
+        try self.static_routes.put("/css/", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8) !void {
+                const file_path = try std.fmt.allocPrint(server.allocator, "web{s}", .{path});
+                defer server.allocator.free(file_path);
+                try server.serveStaticFile(stream, file_path);
+            }
+        }.handler);
+        
+        try self.static_routes.put("/js/", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8) !void {
+                const file_path = try std.fmt.allocPrint(server.allocator, "web{s}", .{path});
+                defer server.allocator.free(file_path);
+                try server.serveStaticFile(stream, file_path);
+            }
+        }.handler);
+        
+        try self.static_routes.put("/images/", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8) !void {
+                const file_path = try std.fmt.allocPrint(server.allocator, "web{s}", .{path});
+                defer server.allocator.free(file_path);
+                try server.serveStaticFile(stream, file_path);
+            }
+        }.handler);
+        
+        try self.static_routes.put("/assets/", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8) !void {
+                const file_path = try std.fmt.allocPrint(server.allocator, "assets{s}", .{path[7..]});
+                defer server.allocator.free(file_path);
+                try server.serveStaticFile(stream, file_path);
+            }
+        }.handler);
     }
 
     pub fn start(self: *Server) !void {
@@ -130,6 +416,11 @@ pub const Server = struct {
     fn handleConnection(self: *Server, connection: std.net.Server.Connection) !void {
         defer connection.stream.close();
 
+        // Use arena allocator for request-scoped allocations
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const request_allocator = arena.allocator();
+
         var buffer: [4096]u8 = undefined;
         const bytes_read = try connection.stream.read(&buffer);
         const request = buffer[0..bytes_read];
@@ -142,34 +433,39 @@ pub const Server = struct {
         const method = parts.next() orelse return ServerError.InvalidRequest;
         const path = parts.next() orelse return ServerError.InvalidRequest;
 
-        try self.routeRequest(connection.stream, method, path, request);
+        try self.routeRequest(connection.stream, method, path, request, request_allocator);
     }
 
-    fn routeRequest(self: *Server, stream: std.net.Stream, method: []const u8, path: []const u8, request: []const u8) !void {
+    fn routeRequest(self: *Server, stream: std.net.Stream, method: []const u8, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
         std.debug.print("📡 {s} {s}\n", .{ method, path });
 
         if (std.mem.eql(u8, method, "GET")) {
-            if (std.mem.eql(u8, path, "/")) {
-                try self.serveStaticFile(stream, "web/templates/index.html");
-            } else if (std.mem.eql(u8, path, "/health")) {
-                try self.handleHealthSimple(stream);
-                // GitHub-compatible API v1 endpoints
-            } else if (std.mem.startsWith(u8, path, "/api/v1/packages/")) {
-                try self.handlePackageApiV1(stream, path);
-            } else if (std.mem.startsWith(u8, path, "/api/v1/search")) {
-                try self.handleSearchApiV1(stream, path);
-            } else if (std.mem.startsWith(u8, path, "/api/v1/resolve/")) {
-                try self.handleResolveApiV1(stream, path);
-            } else if (std.mem.eql(u8, path, "/api/v1/registry/config")) {
-                try self.handleRegistryConfigV1(stream);
-            } else if (std.mem.eql(u8, path, "/api/v1/health")) {
-                try self.handleHealthV1(stream);
-            } else if (std.mem.eql(u8, path, "/api/v1/stats")) {
-                try self.handleStatsApi(stream);
-            } else if (std.mem.eql(u8, path, "/api/v1/auth/me")) {
-                try self.handleUserProfile(stream, request);
-                // Legacy API endpoints (backward compatibility)
-            } else if (std.mem.startsWith(u8, path, "/api/packages")) {
+            // Try exact route match first (O(1) lookup)
+            if (self.exact_routes.get(path)) |handler| {
+                try handler(self, stream, path, request, request_allocator);
+                return;
+            }
+            
+            // Try prefix routes (O(n) but small n)
+            for (self.prefix_routes.items) |route| {
+                if (std.mem.startsWith(u8, path, route.prefix)) {
+                    try route.handler(self, stream, path, request, request_allocator);
+                    return;
+                }
+            }
+            
+            // Try static file routes
+            var static_iterator = self.static_routes.iterator();
+            while (static_iterator.next()) |entry| {
+                if (std.mem.startsWith(u8, path, entry.key_ptr.*)) {
+                    const handler = entry.value_ptr.*;
+                    try handler(self, stream, path);
+                    return;
+                }
+            }
+            
+            // Legacy API endpoints (backward compatibility)
+            if (std.mem.startsWith(u8, path, "/api/packages")) {
                 try self.handlePackageApi(stream, path);
             } else if (std.mem.startsWith(u8, path, "/api/search")) {
                 try self.handleSearchApi(stream, path);
@@ -179,22 +475,6 @@ pub const Server = struct {
                 try self.handleZigistryTrending(stream, path);
             } else if (std.mem.startsWith(u8, path, "/api/zigistry/browse")) {
                 try self.handleZigistryBrowse(stream, path);
-            } else if (std.mem.startsWith(u8, path, "/css/")) {
-                const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
-                defer self.allocator.free(file_path);
-                try self.serveStaticFile(stream, file_path);
-            } else if (std.mem.startsWith(u8, path, "/js/")) {
-                const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
-                defer self.allocator.free(file_path);
-                try self.serveStaticFile(stream, file_path);
-            } else if (std.mem.startsWith(u8, path, "/images/")) {
-                const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
-                defer self.allocator.free(file_path);
-                try self.serveStaticFile(stream, file_path);
-            } else if (std.mem.startsWith(u8, path, "/assets/")) {
-                const file_path = try std.fmt.allocPrint(self.allocator, "{s}", .{path[1..]});
-                defer self.allocator.free(file_path);
-                try self.serveStaticFile(stream, file_path);
             } else if (std.mem.endsWith(u8, path, ".wasm")) {
                 const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
                 defer self.allocator.free(file_path);
@@ -243,6 +523,21 @@ pub const Server = struct {
     }
 
     fn serveStaticFile(self: *Server, stream: std.net.Stream, file_path: []const u8) !void {
+        // Check LRU cache first
+        if (self.file_cache.get(file_path)) |entry| {
+            if (!entry.isExpired()) {
+                const response = try std.fmt.allocPrint(self.allocator, 
+                    "HTTP/1.1 200 OK\r\nContent-Type: {s}\r\nContent-Length: {}\r\nCache-Control: public, max-age=3600\r\n\r\n", 
+                    .{ entry.content_type, entry.content.len }
+                );
+                defer self.allocator.free(response);
+                
+                try stream.writeAll(response);
+                try stream.writeAll(entry.content);
+                return;
+            }
+        }
+        
         const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
             std.debug.print("❌ Failed to open file {s}: {}\n", .{ file_path, err });
             try self.serve404(stream);
@@ -251,13 +546,95 @@ pub const Server = struct {
         defer file.close();
 
         const file_size = try file.getEndPos();
+        
+        // Stream large files in chunks to reduce memory usage
+        const max_size_for_full_load = 64 * 1024; // 64KB threshold
+        const max_cache_size = 32 * 1024; // 32KB cache limit
+        
+        if (file_size > max_size_for_full_load) {
+            try self.serveFileStreaming(stream, file, file_size, file_path);
+        } else {
+            try self.serveFileInMemory(stream, file, file_size, file_path, file_size <= max_cache_size);
+        }
+    }
+
+    fn serveFileInMemory(self: *Server, stream: std.net.Stream, file: std.fs.File, file_size: u64, file_path: []const u8, should_cache: bool) !void {
         const content = try self.allocator.alloc(u8, file_size);
-        defer self.allocator.free(content);
-
         _ = try file.read(content);
+        
+        if (should_cache) {
+            // Cache the file content
+            const cached_content = try self.allocator.dupe(u8, content);
+            const cached_path = try self.allocator.dupe(u8, file_path);
+            const content_type = self.getContentType(file_path);
+            
+            const cache_entry = CacheEntry{
+                .content = cached_content,
+                .content_type = content_type,
+                .timestamp = std.time.timestamp(),
+                .ttl = 3600, // 1 hour TTL
+                .access_count = 0,
+                .last_accessed = std.time.timestamp(),
+            };
+            
+            try self.file_cache.put(cached_path, cache_entry);
+        }
+        
+        try self.sendFileResponse(stream, content, file_path);
+        
+        if (!should_cache) {
+            self.allocator.free(content);
+        }
+    }
 
-        // Determine content type based on file extension
-        const content_type = if (std.mem.endsWith(u8, file_path, ".html"))
+    fn serveFileStreaming(self: *Server, stream: std.net.Stream, file: std.fs.File, file_size: u64, file_path: []const u8) !void {
+        // Send headers first
+        try self.sendFileHeaders(stream, file_size, file_path);
+        
+        // Stream file content in chunks
+        const chunk_size = 8192; // 8KB chunks
+        var buffer: [chunk_size]u8 = undefined;
+        var bytes_remaining = file_size;
+        
+        while (bytes_remaining > 0) {
+            const to_read = @min(bytes_remaining, chunk_size);
+            const bytes_read = try file.read(buffer[0..to_read]);
+            if (bytes_read == 0) break;
+            
+            try stream.writeAll(buffer[0..bytes_read]);
+            bytes_remaining -= bytes_read;
+        }
+    }
+
+    fn sendFileHeaders(self: *Server, stream: std.net.Stream, file_size: u64, file_path: []const u8) !void {
+        const content_type = self.getContentType(file_path);
+        
+        const response = try std.fmt.allocPrint(self.allocator, 
+            "HTTP/1.1 200 OK\r\nContent-Type: {s}\r\nContent-Length: {}\r\nCache-Control: public, max-age=3600\r\n\r\n", 
+            .{ content_type, file_size }
+        );
+        defer self.allocator.free(response);
+
+        try stream.writeAll(response);
+    }
+
+    fn sendFileResponse(self: *Server, stream: std.net.Stream, content: []const u8, file_path: []const u8) !void {
+        const content_type = self.getContentType(file_path);
+        
+        const response = try std.fmt.allocPrint(self.allocator, 
+            "HTTP/1.1 200 OK\r\nContent-Type: {s}\r\nContent-Length: {}\r\nCache-Control: public, max-age=3600\r\n\r\n", 
+            .{ content_type, content.len }
+        );
+        defer self.allocator.free(response);
+
+        try stream.writeAll(response);
+        try stream.writeAll(content);
+    }
+
+    fn getContentType(self: *Server, file_path: []const u8) []const u8 {
+        _ = self;
+        
+        return if (std.mem.endsWith(u8, file_path, ".html"))
             "text/html"
         else if (std.mem.endsWith(u8, file_path, ".css"))
             "text/css"
@@ -275,15 +652,6 @@ pub const Server = struct {
             "image/x-icon"
         else
             "application/octet-stream";
-
-        const response = try std.fmt.allocPrint(self.allocator, 
-            "HTTP/1.1 200 OK\r\nContent-Type: {s}\r\nContent-Length: {}\r\nCache-Control: public, max-age=3600\r\n\r\n", 
-            .{ content_type, content.len }
-        );
-        defer self.allocator.free(response);
-
-        try stream.writeAll(response);
-        try stream.writeAll(content);
     }
 
     fn serveWebUI(self: *Server, stream: std.net.Stream) !void {

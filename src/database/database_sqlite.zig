@@ -7,6 +7,13 @@ const types = @import("../common/types.zig");
 pub const Database = struct {
     db: ?*c.sqlite3,
     allocator: std.mem.Allocator,
+    
+    // Prepared statements for performance optimization
+    insert_package_stmt: ?*c.sqlite3_stmt,
+    select_package_stmt: ?*c.sqlite3_stmt,
+    search_packages_stmt: ?*c.sqlite3_stmt,
+    list_packages_stmt: ?*c.sqlite3_stmt,
+    update_package_stmt: ?*c.sqlite3_stmt,
 
     pub fn init(allocator: std.mem.Allocator, db_path: []const u8) !Database {
         var db: ?*c.sqlite3 = null;
@@ -24,14 +31,30 @@ pub const Database = struct {
         var database = Database{
             .db = db,
             .allocator = allocator,
+            .insert_package_stmt = null,
+            .select_package_stmt = null,
+            .search_packages_stmt = null,
+            .list_packages_stmt = null,
+            .update_package_stmt = null,
         };
 
         // Create tables
         try database.createTables();
+        
+        // Prepare statements for performance optimization
+        try database.prepareStatements();
+        
         return database;
     }
 
     pub fn deinit(self: *Database) void {
+        // Clean up prepared statements
+        if (self.insert_package_stmt) |stmt| _ = c.sqlite3_finalize(stmt);
+        if (self.select_package_stmt) |stmt| _ = c.sqlite3_finalize(stmt);
+        if (self.search_packages_stmt) |stmt| _ = c.sqlite3_finalize(stmt);
+        if (self.list_packages_stmt) |stmt| _ = c.sqlite3_finalize(stmt);
+        if (self.update_package_stmt) |stmt| _ = c.sqlite3_finalize(stmt);
+        
         if (self.db) |db| {
             _ = c.sqlite3_close(db);
         }
@@ -186,6 +209,35 @@ pub const Database = struct {
         try self.execute("INSERT OR IGNORE INTO registry_config (key, value, updated_at) VALUES ('registry_url', 'http://localhost:8080', strftime('%s', 'now'))");
         try self.execute("INSERT OR IGNORE INTO registry_config (key, value, updated_at) VALUES ('api_version', 'v1', strftime('%s', 'now'))");
         try self.execute("INSERT OR IGNORE INTO registry_config (key, value, updated_at) VALUES ('allow_public_publish', '1', strftime('%s', 'now'))");
+    }
+
+    fn prepareStatements(self: *Database) !void {
+        if (self.db == null) return error.DatabaseNotOpen;
+
+        // Prepare insert package statement
+        const insert_sql = "INSERT OR REPLACE INTO packages (owner, repo, description, topics, license, homepage, github_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        var result = c.sqlite3_prepare_v2(self.db, insert_sql.ptr, @intCast(insert_sql.len), &self.insert_package_stmt, null);
+        if (result != c.SQLITE_OK) return error.PrepareStatementFailed;
+
+        // Prepare select package statement
+        const select_sql = "SELECT owner, repo, description, topics, license, homepage, github_url, created_at, updated_at FROM packages WHERE owner = ? AND repo = ?";
+        result = c.sqlite3_prepare_v2(self.db, select_sql.ptr, @intCast(select_sql.len), &self.select_package_stmt, null);
+        if (result != c.SQLITE_OK) return error.PrepareStatementFailed;
+
+        // Prepare search packages statement
+        const search_sql = "SELECT owner, repo, description, topics, license, homepage, github_url, created_at, updated_at FROM packages WHERE owner LIKE ? OR repo LIKE ? OR description LIKE ? ORDER BY updated_at DESC LIMIT ?";
+        result = c.sqlite3_prepare_v2(self.db, search_sql.ptr, @intCast(search_sql.len), &self.search_packages_stmt, null);
+        if (result != c.SQLITE_OK) return error.PrepareStatementFailed;
+
+        // Prepare list packages statement
+        const list_sql = "SELECT owner, repo, description, topics, license, homepage, github_url, created_at, updated_at FROM packages ORDER BY updated_at DESC LIMIT ? OFFSET ?";
+        result = c.sqlite3_prepare_v2(self.db, list_sql.ptr, @intCast(list_sql.len), &self.list_packages_stmt, null);
+        if (result != c.SQLITE_OK) return error.PrepareStatementFailed;
+
+        // Prepare update package statement
+        const update_sql = "UPDATE packages SET description = ?, topics = ?, license = ?, homepage = ?, github_url = ?, updated_at = ? WHERE owner = ? AND repo = ?";
+        result = c.sqlite3_prepare_v2(self.db, update_sql.ptr, @intCast(update_sql.len), &self.update_package_stmt, null);
+        if (result != c.SQLITE_OK) return error.PrepareStatementFailed;
     }
 
     fn execute(self: *Database, sql: []const u8) !void {
@@ -920,30 +972,48 @@ pub const Database = struct {
     }
 
     fn deserializeTopics(self: *Database, json_str: []const u8) ![][]const u8 {
-        // Simple JSON array parsing - in production, use a proper JSON parser
+        // Optimized JSON array parsing with state machine
         if (std.mem.eql(u8, json_str, "[]")) return &[_][]const u8{};
 
         var topics = std.ArrayList([]const u8).init(self.allocator);
         defer topics.deinit();
 
-        // Very basic parsing - assumes clean JSON format
-        var in_string = false;
+        // State machine for efficient parsing
+        const ParseState = enum { WaitingForString, InString, WaitingForComma };
+        var state = ParseState.WaitingForString;
         var string_start: usize = 0;
-
-        for (json_str, 0..) |char, i| {
-            switch (char) {
-                '"' => {
-                    if (!in_string) {
-                        in_string = true;
+        var i: usize = 0;
+        
+        while (i < json_str.len) {
+            const char = json_str[i];
+            switch (state) {
+                .WaitingForString => {
+                    if (char == '"') {
+                        state = .InString;
                         string_start = i + 1;
-                    } else {
-                        in_string = false;
-                        const topic = try self.allocator.dupe(u8, json_str[string_start..i]);
-                        try topics.append(topic);
                     }
                 },
-                else => {},
+                .InString => {
+                    if (char == '"') {
+                        // Handle escaped quotes
+                        if (i > 0 and json_str[i - 1] == '\\') {
+                            // Skip escaped quote
+                        } else {
+                            const topic = try self.allocator.dupe(u8, json_str[string_start..i]);
+                            try topics.append(topic);
+                            state = .WaitingForComma;
+                        }
+                    }
+                },
+                .WaitingForComma => {
+                    if (char == ',') {
+                        state = .WaitingForString;
+                    } else if (char == ']') {
+                        break;
+                    }
+                },
             }
+            i += 1;
         }
 
         return topics.toOwnedSlice();

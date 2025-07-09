@@ -47,12 +47,17 @@ pub const Storage = struct {
     }
 
     pub fn storePackage(self: *Storage, metadata: types.PackageMetadata, package_data: []const u8) !PackageFile {
-        // Create package directory structure: packages/{name}/{version}/
-        const version_str = try metadata.version.toString(self.allocator);
-        defer self.allocator.free(version_str);
+        // Use arena allocator for temporary allocations
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const temp_allocator = arena.allocator();
 
-        const package_dir = try std.fs.path.join(self.allocator, &.{ self.storage_path, "packages", metadata.name, version_str });
-        defer self.allocator.free(package_dir);
+        // Create package directory structure: packages/{name}/{version}/
+        const version_str = try metadata.version.toString(temp_allocator);
+
+        // Use stack buffer for path construction where possible
+        var path_buffer: [512]u8 = undefined;
+        const package_dir = try std.fmt.bufPrint(&path_buffer, "{s}/packages/{s}/{s}", .{ self.storage_path, metadata.name, version_str });
 
         // Create directory recursively
         std.fs.cwd().makePath(package_dir) catch |err| switch (err) {
@@ -61,16 +66,15 @@ pub const Storage = struct {
         };
 
         // Generate filename: {name}-{version}.zpkg
-        const filename = try std.fmt.allocPrint(self.allocator, "{s}-{s}.zpkg", .{ metadata.name, version_str });
-        defer self.allocator.free(filename);
+        var filename_buffer: [256]u8 = undefined;
+        const filename = try std.fmt.bufPrint(&filename_buffer, "{s}-{s}.zpkg", .{ metadata.name, version_str });
 
-        const file_path = try std.fs.path.join(self.allocator, &.{ package_dir, filename });
+        var file_path_buffer: [768]u8 = undefined;
+        const file_path = try std.fmt.bufPrint(&file_path_buffer, "{s}/{s}", .{ package_dir, filename });
 
-        // Calculate checksum
-        var hasher = std.crypto.hash.sha256.Sha256.init(.{});
-        hasher.update(package_data);
-        var checksum_bytes: [32]u8 = undefined;
-        hasher.final(&checksum_bytes);
+        // Calculate checksum using shroud
+        const shroud = @import("shroud");
+        const checksum_bytes = shroud.ghostcipher.zcrypto.hash.sha256(package_data);
 
         // Convert to hex string
         const checksum = try std.fmt.allocPrint(self.allocator, "{}", .{std.fmt.fmtSliceHexLower(&checksum_bytes)});

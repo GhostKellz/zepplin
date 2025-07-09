@@ -1,5 +1,37 @@
 const std = @import("std");
 
+// String pool for commonly used strings to reduce allocations
+pub const StringPool = struct {
+    allocator: std.mem.Allocator,
+    strings: std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
+    
+    pub fn init(allocator: std.mem.Allocator) StringPool {
+        return StringPool{
+            .allocator = allocator,
+            .strings = std.HashMap([]const u8, []const u8, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
+        };
+    }
+    
+    pub fn deinit(self: *StringPool) void {
+        // Free all stored strings
+        var iterator = self.strings.iterator();
+        while (iterator.next()) |entry| {
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.strings.deinit();
+    }
+    
+    pub fn intern(self: *StringPool, str: []const u8) ![]const u8 {
+        if (self.strings.get(str)) |interned| {
+            return interned;
+        }
+        
+        const owned = try self.allocator.dupe(u8, str);
+        try self.strings.put(owned, owned);
+        return owned;
+    }
+};
+
 /// Package version following semantic versioning
 pub const Version = struct {
     major: u32,
@@ -46,24 +78,69 @@ pub const PackageMetadata = struct {
     minimum_zig_version: ?[]const u8 = null,
 
     pub fn toJson(self: PackageMetadata, allocator: std.mem.Allocator) ![]u8 {
-        // Simple JSON serialization for now
-        return std.fmt.allocPrint(allocator,
-            \\{{
-            \\  "name": "{s}",
-            \\  "version": "{}.{}.{}",
-            \\  "description": "{s}",
-            \\  "author": "{s}",
-            \\  "license": "{s}"
-            \\}}
-        , .{
-            self.name,
-            self.version.major,
-            self.version.minor,
-            self.version.patch,
-            self.description orelse "",
-            self.author orelse "",
-            self.license orelse "",
-        });
+        // Optimized JSON serialization using ArrayList for better performance
+        var json_buffer = std.ArrayList(u8).init(allocator);
+        errdefer json_buffer.deinit();
+        
+        const writer = json_buffer.writer();
+        
+        try writer.writeAll("{\n");
+        try writer.print("  \"name\": \"{s}\",\n", .{self.name});
+        try writer.print("  \"version\": \"{}.{}.{}\",\n", .{self.version.major, self.version.minor, self.version.patch});
+        try writer.print("  \"description\": \"{s}\",\n", .{self.description orelse ""});
+        try writer.print("  \"author\": \"{s}\",\n", .{self.author orelse ""});
+        try writer.print("  \"license\": \"{s}\"", .{self.license orelse ""});
+        
+        if (self.homepage) |homepage| {
+            try writer.print(",\n  \"homepage\": \"{s}\"", .{homepage});
+        }
+        if (self.repository) |repository| {
+            try writer.print(",\n  \"repository\": \"{s}\"", .{repository});
+        }
+        if (self.keywords.len > 0) {
+            try writer.writeAll(",\n  \"keywords\": [");
+            for (self.keywords, 0..) |keyword, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print("\"{s}\"", .{keyword});
+            }
+            try writer.writeAll("]");
+        }
+        if (self.minimum_zig_version) |min_version| {
+            try writer.print(",\n  \"minimum_zig_version\": \"{s}\"", .{min_version});
+        }
+        
+        try writer.writeAll("\n}");
+        return json_buffer.toOwnedSlice();
+    }
+    
+    pub fn toJsonStream(self: PackageMetadata, writer: anytype) !void {
+        // Streaming JSON serialization for direct output
+        try writer.writeAll("{\n");
+        try writer.print("  \"name\": \"{s}\",\n", .{self.name});
+        try writer.print("  \"version\": \"{}.{}.{}\",\n", .{self.version.major, self.version.minor, self.version.patch});
+        try writer.print("  \"description\": \"{s}\",\n", .{self.description orelse ""});
+        try writer.print("  \"author\": \"{s}\",\n", .{self.author orelse ""});
+        try writer.print("  \"license\": \"{s}\"", .{self.license orelse ""});
+        
+        if (self.homepage) |homepage| {
+            try writer.print(",\n  \"homepage\": \"{s}\"", .{homepage});
+        }
+        if (self.repository) |repository| {
+            try writer.print(",\n  \"repository\": \"{s}\"", .{repository});
+        }
+        if (self.keywords.len > 0) {
+            try writer.writeAll(",\n  \"keywords\": [");
+            for (self.keywords, 0..) |keyword, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try writer.print("\"{s}\"", .{keyword});
+            }
+            try writer.writeAll("]");
+        }
+        if (self.minimum_zig_version) |min_version| {
+            try writer.print(",\n  \"minimum_zig_version\": \"{s}\"", .{min_version});
+        }
+        
+        try writer.writeAll("\n}");
     }
 };
 

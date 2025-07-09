@@ -28,8 +28,8 @@ pub fn build(b: *std.Build) void {
     // addModule defines a module that we intend to make available for importing
     // to our consumers. We must give it a name because a Zig package can expose
     // module they want to access.
-    // zcrypto dependency for cryptographic operations
-    const zcrypto = b.dependency("zcrypto", .{
+    // shroud dependency for cryptographic operations
+    const shroud = b.dependency("shroud", .{
         .target = target,
         .optimize = optimize,
     });
@@ -89,8 +89,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // Add zcrypto import using the correct module name from zcrypto's build.zig
-    exe.root_module.addImport("zcrypto", zcrypto.module("zcrypto"));
+    // Add shroud import using the correct module name from shroud's build.zig
+    exe.root_module.addImport("shroud", shroud.module("shroud"));
 
     // Link SQLite3 system library
     exe.linkSystemLibrary("sqlite3");

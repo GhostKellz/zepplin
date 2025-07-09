@@ -164,8 +164,8 @@ pub const ZigistryClient = struct {
         _ = category;
         const packages = try self.searchPackages("", limit);
 
-        // Sort by zigistry_score (descending)
-        std.sort.insertion(ZigistryPackage, packages, {}, struct {
+        // Sort by zigistry_score (descending) - use heap sort for better performance
+        std.sort.heap(ZigistryPackage, packages, {}, struct {
             fn lessThan(_: void, a: ZigistryPackage, b: ZigistryPackage) bool {
                 return a.zigistry_score > b.zigistry_score;
             }
