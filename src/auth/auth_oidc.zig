@@ -17,19 +17,21 @@ pub const OIDCConfig = struct {
     scope: []const u8,
     
     pub fn getMicrosoftConfig(allocator: std.mem.Allocator) !OIDCConfig {
-        const tenant_id = std.os.getenv("AZURE_TENANT_ID") orelse "common";
-        const client_id = std.os.getenv("AZURE_CLIENT_ID") orelse return error.MissingClientId;
-        const client_secret = std.os.getenv("AZURE_CLIENT_SECRET") orelse return error.MissingClientSecret;
-        const redirect_uri = std.os.getenv("REDIRECT_BASE_URL") orelse "http://localhost:8080";
+        const tenant_id = std.process.getEnvVarOwned(allocator, "AZURE_TENANT_ID") catch "common";
+        const client_id = std.process.getEnvVarOwned(allocator, "AZURE_CLIENT_ID") catch return error.MissingClientId;
+        const client_secret = std.process.getEnvVarOwned(allocator, "AZURE_CLIENT_SECRET") catch return error.MissingClientSecret;
+        
+        // Support both localhost and production URLs
+        const redirect_base = std.process.getEnvVarOwned(allocator, "REDIRECT_BASE_URL") catch "http://localhost:8080";
         
         return OIDCConfig{
             .provider = .microsoft,
             .tenant_id = try allocator.dupe(u8, tenant_id),
             .client_id = try allocator.dupe(u8, client_id),
             .client_secret = try allocator.dupe(u8, client_secret),
-            .redirect_uri = try std.fmt.allocPrint(allocator, "{s}/api/v1/auth/oidc/microsoft/callback", .{redirect_uri}),
+            .redirect_uri = try std.fmt.allocPrint(allocator, "{s}/api/v1/auth/oidc/microsoft/callback", .{redirect_base}),
             .authority = try std.fmt.allocPrint(allocator, "https://login.microsoftonline.com/{s}", .{tenant_id}),
-            .scope = try allocator.dupe(u8, "openid profile email"),
+            .scope = try allocator.dupe(u8, "openid profile email User.Read"),
         };
     }
 };
@@ -155,16 +157,18 @@ fn generateState(allocator: std.mem.Allocator) ![]u8 {
     var random_bytes: [16]u8 = undefined;
     std.crypto.random.bytes(&random_bytes);
     
-    const encoded = std.base64.url_safe_no_pad.Encoder.encode(&random_bytes);
-    return allocator.dupe(u8, &encoded);
+    var encoded: [24]u8 = undefined;
+    _ = std.base64.url_safe_no_pad.Encoder.encode(&encoded, &random_bytes);
+    return allocator.dupe(u8, std.mem.sliceTo(&encoded, 0));
 }
 
 fn generateNonce(allocator: std.mem.Allocator) ![]u8 {
     var random_bytes: [16]u8 = undefined;
     std.crypto.random.bytes(&random_bytes);
     
-    const encoded = std.base64.url_safe_no_pad.Encoder.encode(&random_bytes);
-    return allocator.dupe(u8, &encoded);
+    var encoded: [24]u8 = undefined;
+    _ = std.base64.url_safe_no_pad.Encoder.encode(&encoded, &random_bytes);
+    return allocator.dupe(u8, std.mem.sliceTo(&encoded, 0));
 }
 
 // JWT decoding for ID tokens

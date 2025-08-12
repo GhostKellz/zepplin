@@ -1,5 +1,5 @@
 const std = @import("std");
 const types = @import("../common/types.zig");
 
-// Use SQLite database - persistent SQL storage
-pub const Database = @import("database_sqlite.zig").Database;
+// Use zqlite database - post-quantum secure storage
+pub const Database = @import("database_zqlite.zig").Database;

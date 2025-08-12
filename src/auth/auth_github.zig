@@ -8,9 +8,9 @@ pub const GitHubOAuthConfig = struct {
     scope: []const u8,
     
     pub fn fromEnv(allocator: std.mem.Allocator) !GitHubOAuthConfig {
-        const client_id = std.os.getenv("GITHUB_CLIENT_ID") orelse return error.MissingClientId;
-        const client_secret = std.os.getenv("GITHUB_CLIENT_SECRET") orelse return error.MissingClientSecret;
-        const redirect_base = std.os.getenv("REDIRECT_BASE_URL") orelse "http://localhost:8080";
+        const client_id = std.process.getEnvVarOwned(allocator, "GITHUB_CLIENT_ID") catch return error.MissingClientId;
+        const client_secret = std.process.getEnvVarOwned(allocator, "GITHUB_CLIENT_SECRET") catch return error.MissingClientSecret;
+        const redirect_base = std.process.getEnvVarOwned(allocator, "REDIRECT_BASE_URL") catch "http://localhost:8080";
         
         return GitHubOAuthConfig{
             .client_id = try allocator.dupe(u8, client_id),
@@ -120,7 +120,6 @@ pub const GitHubOAuthClient = struct {
     }
     
     pub fn getUserEmails(self: *GitHubOAuthClient, access_token: []const u8) ![]GitHubEmail {
-        _ = self;
         _ = access_token;
         // This would make an HTTP GET request to https://api.github.com/user/emails
         // For now, return mock emails
@@ -135,7 +134,6 @@ pub const GitHubOAuthClient = struct {
     }
     
     pub fn getUserOrganizations(self: *GitHubOAuthClient, access_token: []const u8) ![]GitHubOrganization {
-        _ = self;
         _ = access_token;
         // This would make an HTTP GET request to https://api.github.com/user/orgs
         // For now, return empty array
@@ -154,8 +152,9 @@ fn generateState(allocator: std.mem.Allocator) ![]u8 {
     var random_bytes: [16]u8 = undefined;
     std.crypto.random.bytes(&random_bytes);
     
-    const encoded = std.base64.url_safe_no_pad.Encoder.encode(&random_bytes);
-    return allocator.dupe(u8, &encoded);
+    var encoded: [24]u8 = undefined; // Base64 of 16 bytes is ~22 chars
+    _ = std.base64.url_safe_no_pad.Encoder.encode(&encoded, &random_bytes);
+    return allocator.dupe(u8, std.mem.sliceTo(&encoded, 0));
 }
 
 // Helper function to parse GitHub's access token response
@@ -167,9 +166,9 @@ pub fn parseAccessTokenResponse(allocator: std.mem.Allocator, response: []const 
     var scope: ?[]const u8 = null;
     var token_type: ?[]const u8 = null;
     
-    var iter = std.mem.split(u8, response, "&");
+    var iter = std.mem.splitSequence(u8, response, "&");
     while (iter.next()) |param| {
-        var param_iter = std.mem.split(u8, param, "=");
+        var param_iter = std.mem.splitSequence(u8, param, "=");
         const key = param_iter.next() orelse continue;
         const value = param_iter.next() orelse continue;
         

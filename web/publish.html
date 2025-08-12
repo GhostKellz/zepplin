@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Publish Package - Zepplin Registry</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            background: #0f1419; 
+            color: #e6e1dc; 
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+            padding: 1rem 0;
+            border-bottom: 1px solid #39414a;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #f7931e;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .form-card {
+            background: #1e2328;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        h1 {
+            color: #f7931e;
+            margin-bottom: 0.5rem;
+        }
+        .subtitle {
+            color: #b8b4a3;
+            margin-bottom: 2rem;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+        label {
+            display: block;
+            color: #b8b4a3;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        .required {
+            color: #ff5555;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 0.75rem;
+            background: #0f1419;
+            border: 1px solid #39414a;
+            border-radius: 4px;
+            color: #e6e1dc;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #36c692;
+        }
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        .file-upload {
+            border: 2px dashed #39414a;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+            background: #0f1419;
+        }
+        .file-upload:hover {
+            border-color: #36c692;
+            background: #1a1f24;
+        }
+        .file-upload.dragover {
+            border-color: #f7931e;
+            background: #2a2317;
+        }
+        .file-upload input[type="file"] {
+            display: none;
+        }
+        .file-upload-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 1rem;
+            opacity: 0.6;
+        }
+        .file-upload-text {
+            color: #b8b4a3;
+            margin-bottom: 0.5rem;
+        }
+        .file-upload-hint {
+            color: #6c7680;
+            font-size: 0.9rem;
+        }
+        .file-info {
+            background: #2a3038;
+            border: 1px solid #39414a;
+            border-radius: 4px;
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .file-name {
+            font-weight: 500;
+        }
+        .file-size {
+            color: #b8b4a3;
+            font-size: 0.9rem;
+        }
+        .remove-file {
+            background: none;
+            border: none;
+            color: #ff5555;
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+        .button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        .button.primary {
+            background: #36c692;
+            color: #0f1419;
+        }
+        .button.primary:hover {
+            background: #2eb882;
+        }
+        .button.secondary {
+            background: #39414a;
+            color: #e6e1dc;
+        }
+        .button.secondary:hover {
+            background: #4a5259;
+        }
+        .button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid #39414a;
+        }
+        .message {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .message.success {
+            background: #36c692;
+            color: #0f1419;
+        }
+        .message.error {
+            background: #ff5555;
+            color: #f8f8f2;
+        }
+        .message.info {
+            background: #0078d4;
+            color: white;
+        }
+        .loading-spinner {
+            border: 2px solid #39414a;
+            border-top: 2px solid #36c692;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                📦 Zepplin
+            </div>
+            <div class="user-info">
+                <span id="username">Not logged in</span>
+                <a href="/auth" class="button secondary">Login</a>
+            </div>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="form-card">
+            <h1>Publish Package</h1>
+            <p class="subtitle">Share your Zig package with the community</p>
+
+            <form id="publishForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="owner">Owner <span class="required">*</span></label>
+                        <input type="text" id="owner" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="repo">Package Name <span class="required">*</span></label>
+                        <input type="text" id="repo" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="version">Version <span class="required">*</span></label>
+                        <input type="text" id="version" placeholder="1.0.0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="license">License</label>
+                        <select id="license">
+                            <option value="">Select license</option>
+                            <option value="MIT">MIT</option>
+                            <option value="Apache-2.0">Apache 2.0</option>
+                            <option value="BSD-3-Clause">BSD 3-Clause</option>
+                            <option value="GPL-3.0">GPL 3.0</option>
+                            <option value="ISC">ISC</option>
+                            <option value="Unlicense">Unlicense</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="description">Description</label>
+                    <textarea id="description" placeholder="Brief description of your package"></textarea>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="homepage">Homepage URL</label>
+                    <input type="url" id="homepage" placeholder="https://github.com/user/repo">
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="package-file">Package File <span class="required">*</span></label>
+                    <div class="file-upload" id="fileUpload">
+                        <input type="file" id="packageFile" accept=".tar.gz,.tgz" required>
+                        <svg class="file-upload-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+                        </svg>
+                        <div class="file-upload-text">Click to upload or drag and drop</div>
+                        <div class="file-upload-hint">TAR.GZ files only (Max 50MB)</div>
+                    </div>
+                    <div id="fileInfo" class="file-info hidden">
+                        <div>
+                            <div class="file-name" id="fileName"></div>
+                            <div class="file-size" id="fileSize"></div>
+                        </div>
+                        <button type="button" class="remove-file" id="removeFile">✕</button>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <a href="/" class="button secondary">Cancel</a>
+                    <button type="submit" class="button primary" id="publishBtn">
+                        Publish Package
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Check authentication
+        const token = localStorage.getItem('zepplin_token');
+        const username = localStorage.getItem('zepplin_username');
+        
+        if (username) {
+            document.getElementById('username').textContent = username;
+            document.querySelector('.user-info a').textContent = 'Logout';
+            document.querySelector('.user-info a').href = '#';
+            document.querySelector('.user-info a').onclick = () => {
+                localStorage.removeItem('zepplin_token');
+                localStorage.removeItem('zepplin_username');
+                window.location.href = '/auth';
+            };
+            
+            // Pre-fill owner with username
+            document.getElementById('owner').value = username;
+        } else {
+            showMessage('Please log in to publish packages', 'error');
+            setTimeout(() => window.location.href = '/auth', 2000);
+        }
+
+        // File upload handling
+        const fileUpload = document.getElementById('fileUpload');
+        const fileInput = document.getElementById('packageFile');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const removeFile = document.getElementById('removeFile');
+
+        fileUpload.addEventListener('click', () => fileInput.click());
+
+        fileUpload.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUpload.classList.add('dragover');
+        });
+
+        fileUpload.addEventListener('dragleave', () => {
+            fileUpload.classList.remove('dragover');
+        });
+
+        fileUpload.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUpload.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        removeFile.addEventListener('click', () => {
+            fileInput.value = '';
+            fileUpload.style.display = 'block';
+            fileInfo.classList.add('hidden');
+        });
+
+        function handleFile(file) {
+            if (!file.name.endsWith('.tar.gz') && !file.name.endsWith('.tgz')) {
+                showMessage('Please select a .tar.gz file', 'error');
+                return;
+            }
+
+            if (file.size > 50 * 1024 * 1024) { // 50MB
+                showMessage('File size must be less than 50MB', 'error');
+                return;
+            }
+
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileUpload.style.display = 'none';
+            fileInfo.classList.remove('hidden');
+
+            // Set the file to the input
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        // Form submission
+        document.getElementById('publishForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!token) {
+                showMessage('Authentication required', 'error');
+                return;
+            }
+
+            const submitBtn = document.getElementById('publishBtn');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<span class="loading-spinner"></span>Publishing...';
+            submitBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                formData.append('tag_name', document.getElementById('version').value);
+                formData.append('body', document.getElementById('description').value);
+                formData.append('draft', 'false');
+                formData.append('prerelease', 'false');
+
+                const owner = document.getElementById('owner').value;
+                const repo = document.getElementById('repo').value;
+
+                const response = await fetch(`/api/v1/packages/${owner}/${repo}/releases`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage('Package published successfully!', 'success');
+                    document.getElementById('publishForm').reset();
+                    fileUpload.style.display = 'block';
+                    fileInfo.classList.add('hidden');
+                    setTimeout(() => {
+                        window.location.href = `/packages/${owner}/${repo}`;
+                    }, 2000);
+                } else {
+                    showMessage(data.error || 'Publishing failed', 'error');
+                }
+            } catch (error) {
+                showMessage('Network error: ' + error.message, 'error');
+            } finally {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+
+        // Auto-fill GitHub URL when owner/repo changes
+        function updateHomepage() {
+            const owner = document.getElementById('owner').value;
+            const repo = document.getElementById('repo').value;
+            const homepage = document.getElementById('homepage');
+            
+            if (owner && repo && !homepage.value) {
+                homepage.value = `https://github.com/${owner}/${repo}`;
+            }
+        }
+
+        document.getElementById('owner').addEventListener('blur', updateHomepage);
+        document.getElementById('repo').addEventListener('blur', updateHomepage);
+    </script>
+</body>
+</html>

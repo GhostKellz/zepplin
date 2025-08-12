@@ -75,7 +75,7 @@ pub const TomlParser = struct {
         };
 
         var current_section: enum { none, package, dependencies, registries } = .none;
-        var lines = std.mem.split(u8, content, "\n");
+        var lines = std.mem.splitSequence(u8, content, "\n");
 
         // Package fields
         var name: ?[]const u8 = null;

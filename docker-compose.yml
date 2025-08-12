@@ -4,11 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VERSION: "0.4.0"
+        VERSION: "0.5.1"
     container_name: zepplin-registry
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"  # Only bind to localhost for nginx proxy
     volumes:
       - zepplin_data:/app/data
       - zepplin_packages:/app/packages
@@ -17,26 +17,61 @@ services:
       - ./backups:/app/backups
       - ./logs:/app/logs
     environment:
-      - ZEPPLIN_VERSION=0.5.0
+      - ZEPPLIN_VERSION=0.5.1
       - ZEPPLIN_PORT=8080
       - ZEPPLIN_BIND_ADDRESS=0.0.0.0
       - ZEPPLIN_SECRET_KEY=${ZEPPLIN_SECRET_KEY:-insecure-default-change-me}
       - ZEPPLIN_DB_PATH=/app/data/zepplin.db
       - ZEPPLIN_STORAGE_PATH=/app/data
-      - ZEPPLIN_DOMAIN=${ZEPPLIN_DOMAIN:-localhost}
+      - ZEPPLIN_DOMAIN=${ZEPPLIN_DOMAIN:-zig.cktech.org}
       - ZEPPLIN_REGISTRY_NAME=${ZEPPLIN_REGISTRY_NAME:-Zepplin Registry}
       - ZEPPLIN_LOG_LEVEL=${ZEPPLIN_LOG_LEVEL:-info}
       - ZEPPLIN_ZIGISTRY_URL=${ZEPPLIN_ZIGISTRY_URL:-}
+      
+      # OAuth/OIDC Configuration for production
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - REDIRECT_BASE_URL=${REDIRECT_BASE_URL:-https://zig.cktech.org}
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/packages"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     labels:
       - "com.cktech.service=zepplin-registry"
-      - "com.cktech.version=0.4.0"
-      - "com.cktech.description=Lightning-fast Zig Package Registry"
+      - "com.cktech.version=0.5.1"
+      - "com.cktech.description=Lightning-fast Zig Package Registry with OAuth"
+      - "traefik.enable=true"
+      - "traefik.http.routers.zepplin.rule=Host(`zig.cktech.org`)"
+      - "traefik.http.routers.zepplin.tls=true"
+      - "traefik.http.routers.zepplin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.zepplin.loadbalancer.server.port=8080"
+
+  nginx:
+    image: nginx:alpine
+    container_name: zepplin-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - zepplin-registry
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   zepplin_data:
@@ -45,3 +80,11 @@ volumes:
   zepplin_packages:
     driver: local
     name: zepplin_packages
+  nginx_cache:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  default:
+    name: zepplin-network

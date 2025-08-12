@@ -49,18 +49,18 @@ pub const UnifiedAuthSystem = struct {
     jwt_secret: []const u8,
     
     pub fn init(allocator: std.mem.Allocator) !UnifiedAuthSystem {
-        const jwt_secret = std.os.getenv("JWT_SECRET") orelse "default_secret_change_in_production";
+        const jwt_secret = std.process.getEnvVarOwned(allocator, "JWT_SECRET") catch "default_secret_change_in_production";
         
         // Initialize OIDC client if configured
         var oidc_client: ?auth_oidc.OIDCClient = null;
-        if (std.os.getenv("AZURE_CLIENT_ID")) |_| {
+        if (std.process.hasEnvVarConstant("AZURE_CLIENT_ID")) {
             const oidc_config = try auth_oidc.OIDCConfig.getMicrosoftConfig(allocator);
             oidc_client = auth_oidc.OIDCClient.init(allocator, oidc_config);
         }
         
         // Initialize GitHub client if configured
         var github_client: ?auth_github.GitHubOAuthClient = null;
-        if (std.os.getenv("GITHUB_CLIENT_ID")) |_| {
+        if (std.process.hasEnvVarConstant("GITHUB_CLIENT_ID")) {
             const github_config = try auth_github.GitHubOAuthConfig.fromEnv(allocator);
             github_client = auth_github.GitHubOAuthClient.init(allocator, github_config);
         }
@@ -179,8 +179,10 @@ pub const UnifiedAuthSystem = struct {
         defer self.allocator.free(payload);
         
         // Base64 encode header and payload
-        const header_encoded = std.base64.url_safe_no_pad.Encoder.encode(header);
-        const payload_encoded = std.base64.url_safe_no_pad.Encoder.encode(payload);
+        var header_buf: [256]u8 = undefined;
+        var payload_buf: [512]u8 = undefined;
+        const header_encoded = std.base64.url_safe_no_pad.Encoder.encode(&header_buf, header);
+        const payload_encoded = std.base64.url_safe_no_pad.Encoder.encode(&payload_buf, payload);
         
         // Create signature
         const signing_input = try std.fmt.allocPrint(
@@ -195,7 +197,8 @@ pub const UnifiedAuthSystem = struct {
         var signature: [32]u8 = undefined;
         hmac.final(&signature);
         
-        const signature_encoded = std.base64.url_safe_no_pad.Encoder.encode(&signature);
+        var sig_buf: [64]u8 = undefined;
+        const signature_encoded = std.base64.url_safe_no_pad.Encoder.encode(&sig_buf, &signature);
         
         // Combine all parts
         return std.fmt.allocPrint(
@@ -207,7 +210,7 @@ pub const UnifiedAuthSystem = struct {
     
     pub fn validateJWT(self: *UnifiedAuthSystem, token: []const u8) !bool {
         // Split token into parts
-        var parts = std.mem.split(u8, token, ".");
+        var parts = std.mem.splitSequence(u8, token, ".");
         const header = parts.next() orelse return false;
         const payload = parts.next() orelse return false;
         const signature = parts.next() orelse return false;
@@ -225,15 +228,14 @@ pub const UnifiedAuthSystem = struct {
         var expected_signature: [32]u8 = undefined;
         hmac.final(&expected_signature);
         
-        const expected_encoded = std.base64.url_safe_no_pad.Encoder.encode(&expected_signature);
+        var exp_buf: [64]u8 = undefined;
+        const expected_encoded = std.base64.url_safe_no_pad.Encoder.encode(&exp_buf, &expected_signature);
         
-        return std.mem.eql(u8, signature, &expected_encoded);
+        return std.mem.eql(u8, signature, expected_encoded);
     }
     
     pub fn linkAccount(self: *UnifiedAuthSystem, user_id: u64, provider: AuthProvider, code: []const u8) !LinkedAccount {
         _ = self;
-        _ = user_id;
-        _ = provider;
         _ = code;
         // This would link an additional provider to an existing user account
         return LinkedAccount{
@@ -254,7 +256,6 @@ pub const UnifiedAuthSystem = struct {
     }
     
     pub fn getLinkedProviders(self: *UnifiedAuthSystem, user_id: u64) ![]AuthProvider {
-        _ = self;
         _ = user_id;
         // This would fetch all linked providers for a user
         return self.allocator.alloc(AuthProvider, 0);

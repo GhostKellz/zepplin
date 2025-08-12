@@ -34,6 +34,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // zqlite dependency for post-quantum secure database
+    const zqlite = b.dependency("zqlite", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const mod = b.addModule("zepplin", .{
         // The root source file is the "entry point" of this module. Users of
         // this module will only be able to access public declarations contained
@@ -91,10 +97,9 @@ pub fn build(b: *std.Build) void {
 
     // Add shroud import using the correct module name from shroud's build.zig
     exe.root_module.addImport("shroud", shroud.module("shroud"));
-
-    // Link SQLite3 system library
-    exe.linkSystemLibrary("sqlite3");
-    exe.linkLibC();
+    
+    // Add zqlite import for post-quantum secure database
+    exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default

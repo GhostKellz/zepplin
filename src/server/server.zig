@@ -502,6 +502,14 @@ pub const Server = struct {
                 try self.handleZigistryBrowse(stream, path);
             } else if (std.mem.startsWith(u8, path, "/api/ziglibs/packages")) {
                 try self.handleZiglibsPackages(stream, path);
+            } else if (std.mem.eql(u8, path, "/api/v1/auth/oidc/microsoft/login")) {
+                try self.handleMicrosoftLogin(stream);
+            } else if (std.mem.startsWith(u8, path, "/api/v1/auth/oidc/microsoft/callback")) {
+                try self.handleMicrosoftCallback(stream, path, request);
+            } else if (std.mem.eql(u8, path, "/api/v1/auth/oauth/github/login")) {
+                try self.handleGitHubLogin(stream);
+            } else if (std.mem.startsWith(u8, path, "/api/v1/auth/oauth/github/callback")) {
+                try self.handleGitHubCallback(stream, path, request);
             } else if (std.mem.endsWith(u8, path, ".wasm")) {
                 const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
                 defer self.allocator.free(file_path);
@@ -509,6 +517,9 @@ pub const Server = struct {
             } else if (std.mem.eql(u8, path, "/auth")) {
                 // Auth test page
                 try self.serveStaticFile(stream, "web/auth.html");
+            } else if (std.mem.eql(u8, path, "/publish")) {
+                // Package publishing page
+                try self.serveStaticFile(stream, "web/publish.html");
             } else if (std.mem.startsWith(u8, path, "/packages") or 
                       std.mem.startsWith(u8, path, "/search") or 
                       std.mem.startsWith(u8, path, "/trending") or 
@@ -1030,14 +1041,15 @@ pub const Server = struct {
 
         const packages = try self.database.searchPackages(query, 20);
         defer {
-            for (packages) |pkg| {
-                self.allocator.free(pkg.owner);
-                self.allocator.free(pkg.repo);
-                if (pkg.description) |desc| self.allocator.free(desc);
-                if (pkg.latest_version) |version| self.allocator.free(version);
-                for (pkg.topics) |topic| self.allocator.free(topic);
-                self.allocator.free(pkg.topics);
-            }
+            // Note: Mock database returns static strings, no need to free individual fields
+            // for (packages) |pkg| {
+            //     if (pkg.owner) |o| self.allocator.free(o);
+            //     if (pkg.repo) |r| self.allocator.free(r);
+            //     if (pkg.description) |desc| self.allocator.free(desc);
+            //     if (pkg.latest_version) |version| self.allocator.free(version);
+            //     for (pkg.topics) |topic| self.allocator.free(topic);
+            //     self.allocator.free(pkg.topics);
+            // }
             self.allocator.free(packages);
         }
 
@@ -1060,10 +1072,10 @@ pub const Server = struct {
                 \\  "latest_version": "{s}"
                 \\}}
             , .{
-                pkg.owner,
-                pkg.repo,
-                pkg.owner,
-                pkg.repo,
+                pkg.owner orelse "",
+                pkg.repo orelse "",
+                pkg.owner orelse "",
+                pkg.repo orelse "",
                 pkg.description orelse "",
                 pkg.github_stars,
                 pkg.download_count,
@@ -1385,14 +1397,16 @@ pub const Server = struct {
 
         const pkg = package.?;
         defer {
-            self.allocator.free(pkg.owner);
-            self.allocator.free(pkg.repo);
-            if (pkg.description) |d| self.allocator.free(d);
-            if (pkg.license) |l| self.allocator.free(l);
-            if (pkg.homepage) |h| self.allocator.free(h);
-            if (pkg.github_url) |g| self.allocator.free(g);
-            for (pkg.topics) |topic| self.allocator.free(topic);
-            self.allocator.free(pkg.topics);
+            // Note: Mock database returns static strings, no need to free them
+            // When using real database with allocated strings, uncomment and fix:
+            // if (pkg.owner) |o| self.allocator.free(o);
+            // if (pkg.repo) |r| self.allocator.free(r);
+            // if (pkg.description) |d| self.allocator.free(d);
+            // if (pkg.license) |l| self.allocator.free(l);
+            // if (pkg.homepage) |h| self.allocator.free(h);
+            // if (pkg.github_url) |g| self.allocator.free(g);
+            // for (pkg.topics) |topic| self.allocator.free(topic);
+            // self.allocator.free(pkg.topics);
         }
 
         const topics_json = try self.serializeStringArray(pkg.topics);
@@ -1414,10 +1428,10 @@ pub const Server = struct {
             \\  "private": {s}
             \\}}
         , .{
-            pkg.owner,
-            pkg.repo,
-            pkg.owner,
-            pkg.repo,
+            pkg.owner orelse "",
+            pkg.repo orelse "",
+            pkg.owner orelse "",
+            pkg.repo orelse "",
             pkg.description orelse "",
             topics_json,
             pkg.license orelse "",
@@ -1641,7 +1655,7 @@ pub const Server = struct {
         defer self.allocator.free(package_data);
 
         // Increment download count (using mock database for now)
-        self.database.incrementDownloadCount(owner, repo, version) catch |err| {
+        self.database.incrementDownloadCount(package_name) catch |err| {
             std.debug.print("Failed to increment download count: {}\n", .{err});
             // Continue with download even if counter fails
         };
@@ -1699,14 +1713,16 @@ pub const Server = struct {
 
         const results = try self.database.searchPackages(query, limit);
         defer {
-            for (results) |result| {
-                self.allocator.free(result.owner);
-                self.allocator.free(result.repo);
-                if (result.description) |d| self.allocator.free(d);
-                if (result.latest_version) |v| self.allocator.free(v);
-                for (result.topics) |topic| self.allocator.free(topic);
-                self.allocator.free(result.topics);
-            }
+            // Note: Mock database returns static strings, no need to free individual fields
+            // When using real database with allocated strings, uncomment and fix:
+            // for (results) |result| {
+            //     if (result.owner) |o| self.allocator.free(o);
+            //     if (result.repo) |r| self.allocator.free(r);
+            //     if (result.description) |d| self.allocator.free(d);
+            //     if (result.latest_version) |v| self.allocator.free(v);
+            //     for (result.topics) |topic| self.allocator.free(topic);
+            //     self.allocator.free(result.topics);
+            // }
             self.allocator.free(results);
         }
 
@@ -1733,10 +1749,10 @@ pub const Server = struct {
                 \\  "updated_at": "{d}"
                 \\}}
             , .{
-                result.owner,
-                result.repo,
-                result.owner,
-                result.repo,
+                result.owner orelse "",
+                result.repo orelse "",
+                result.owner orelse "",
+                result.repo orelse "",
                 result.description orelse "",
                 topics_json,
                 result.github_stars,
@@ -2219,77 +2235,12 @@ pub const Server = struct {
     }
     
     fn handleLogin(self: *Server, stream: std.net.Stream) !void {
-        var buffer: [8192]u8 = undefined;
-        const bytes_read = try stream.read(&buffer);
-        const request = buffer[0..bytes_read];
-        
-        // Find the body after headers
-        const header_end = std.mem.indexOf(u8, request, "\r\n\r\n") orelse {
-            try self.serveJsonError(stream, 400, "Invalid request");
-            return;
-        };
-        const body = request[header_end + 4..];
-        
-        // Simple JSON parsing for username and password
-        var username: ?[]const u8 = null;
-        var password: ?[]const u8 = null;
-        
-        // Extract username
-        if (std.mem.indexOf(u8, body, "\"username\"")) |username_pos| {
-            const colon_pos = std.mem.indexOf(u8, body[username_pos..], ":") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
-            const quote_start = std.mem.indexOf(u8, body[username_pos + colon_pos..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
-            const quote_end = std.mem.indexOf(u8, body[username_pos + colon_pos + quote_start + 1..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
-            username = body[username_pos + colon_pos + quote_start + 1..][0..quote_end];
-        }
-        
-        // Extract password
-        if (std.mem.indexOf(u8, body, "\"password\"")) |password_pos| {
-            const colon_pos = std.mem.indexOf(u8, body[password_pos..], ":") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
-            const quote_start = std.mem.indexOf(u8, body[password_pos + colon_pos..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
-            const quote_end = std.mem.indexOf(u8, body[password_pos + colon_pos + quote_start + 1..], "\"") orelse return self.serveJsonError(stream, 400, "Invalid JSON");
-            password = body[password_pos + colon_pos + quote_start + 1..][0..quote_end];
-        }
-        
-        if (username == null or password == null) {
-            try self.serveJsonError(stream, 400, "Missing required fields: username, password");
-            return;
-        }
-        
-        // Get user from database
-        const user = try self.database.getUser(username.?);
-        if (user == null) {
-            try self.serveJsonError(stream, 401, "Invalid credentials");
-            return;
-        }
-        
-        const u = user.?;
-        defer {
-            self.allocator.free(u.username);
-            self.allocator.free(u.email);
-            self.allocator.free(u.password_hash);
-            if (u.api_token) |t| self.allocator.free(t);
-        }
-        
-        // Verify password
-        const valid = try self.auth.verifyPassword(password.?, u.password_hash);
-        if (!valid) {
-            try self.serveJsonError(stream, 401, "Invalid credentials");
-            return;
-        }
-        
-        // Return success with existing token
-        const json_response = try std.fmt.allocPrint(self.allocator,
-            \\{{
-            \\  "username": "{s}",
-            \\  "email": "{s}",
-            \\  "token": "{s}"
-            \\}}
-        , .{ u.username, u.email, u.api_token orelse "" });
-        defer self.allocator.free(json_response);
-        
-        try self.serveJson(stream, 200, json_response);
+        // TODO: Implement proper login after User type is defined
+        try self.serveJsonError(stream, 501, "Login not implemented yet");
     }
-    
+
+    // Login disabled - will be re-implemented when User type is added
+
     fn validateAuthToken(self: *Server, request: []const u8) !?AuthenticatedUser {
         // Extract Authorization header
         const auth_header_start = std.mem.indexOf(u8, request, "Authorization: ") orelse return null;
@@ -2526,15 +2477,15 @@ pub const Server = struct {
             return;
         };
         defer {
-            for (packages) |pkg| {
-                self.allocator.free(pkg.owner);
-                self.allocator.free(pkg.repo);
-                if (pkg.description) |desc| self.allocator.free(desc);
-                // TODO: Free topics array when implemented
-                if (pkg.license) |license| self.allocator.free(license);
-                if (pkg.homepage) |homepage| self.allocator.free(homepage);
-                if (pkg.github_url) |url| self.allocator.free(url);
-            }
+            // Note: Mock database returns static strings, no need to free individual fields
+            // for (packages) |pkg| {
+            //     if (pkg.owner) |o| self.allocator.free(o);
+            //     if (pkg.repo) |r| self.allocator.free(r);
+            //     if (pkg.description) |desc| self.allocator.free(desc);
+            //     if (pkg.license) |license| self.allocator.free(license);
+            //     if (pkg.homepage) |homepage| self.allocator.free(homepage);
+            //     if (pkg.github_url) |url| self.allocator.free(url);
+            // }
             self.allocator.free(packages);
         }
         
@@ -2560,8 +2511,8 @@ pub const Server = struct {
                 \\  "source": "ziglibs"
                 \\}}
             , .{
-                pkg.owner,
-                pkg.repo,
+                pkg.owner orelse "",
+                pkg.repo orelse "",
                 pkg.description orelse "",
                 pkg.license orelse "",
                 pkg.homepage orelse "",
@@ -2725,5 +2676,222 @@ pub const Server = struct {
         ;
         
         try self.serveJson(stream, 200, resolution);
+    }
+    
+    // OAuth/OIDC Authentication Handlers
+    const unified_auth = @import("../auth/unified_auth.zig");
+    
+    fn handleMicrosoftLogin(self: *Server, stream: std.net.Stream) !void {
+        // Initialize unified auth system
+        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator) catch {
+            return self.serveJsonError(stream, 500, "Authentication system not configured");
+        };
+        defer auth_system.deinit();
+        
+        // Get authorization URL
+        const auth_url = auth_system.getAuthorizationUrl(.microsoft) catch {
+            return self.serveJsonError(stream, 500, "Failed to generate authorization URL");
+        };
+        defer self.allocator.free(auth_url);
+        
+        // Redirect to Microsoft OAuth
+        const redirect_response = try std.fmt.allocPrint(self.allocator,
+            "HTTP/1.1 302 Found\r\n" ++
+            "Location: {s}\r\n" ++
+            "Set-Cookie: oauth_state=microsoft; HttpOnly; Path=/; Max-Age=600\r\n" ++
+            "\r\n",
+            .{auth_url}
+        );
+        defer self.allocator.free(redirect_response);
+        
+        _ = try stream.write(redirect_response);
+    }
+    
+    fn handleMicrosoftCallback(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8) !void {
+        _ = request;
+        
+        // Parse the authorization code from query parameters
+        const query_start = std.mem.indexOf(u8, path, "?") orelse {
+            return self.serveJsonError(stream, 400, "Missing authorization code");
+        };
+        const query = path[query_start + 1..];
+        
+        var code: ?[]const u8 = null;
+        var state: ?[]const u8 = null;
+        var error_param: ?[]const u8 = null;
+        
+        var params = std.mem.splitSequence(u8, query, "&");
+        while (params.next()) |param| {
+            if (std.mem.startsWith(u8, param, "code=")) {
+                code = param[5..];
+            } else if (std.mem.startsWith(u8, param, "state=")) {
+                state = param[6..];
+            } else if (std.mem.startsWith(u8, param, "error=")) {
+                error_param = param[6..];
+            }
+        }
+        
+        if (error_param) |err| {
+            const error_msg = try std.fmt.allocPrint(self.allocator, "OAuth error: {s}", .{err});
+            defer self.allocator.free(error_msg);
+            return self.serveJsonError(stream, 400, error_msg);
+        }
+        
+        const auth_code = code orelse {
+            return self.serveJsonError(stream, 400, "Missing authorization code");
+        };
+        
+        // TODO: Validate state parameter for CSRF protection
+        if (state) |_| {
+            // State validation would go here
+        }
+        
+        // Initialize unified auth system
+        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator) catch {
+            return self.serveJsonError(stream, 500, "Authentication system not configured");
+        };
+        defer auth_system.deinit();
+        
+        // Exchange code for user info
+        const user = auth_system.handleCallback(.microsoft, auth_code) catch {
+            return self.serveJsonError(stream, 500, "Failed to exchange authorization code");
+        };
+        
+        // Create JWT token
+        const jwt_token = auth_system.createJWT(user) catch {
+            return self.serveJsonError(stream, 500, "Failed to create session token");
+        };
+        defer self.allocator.free(jwt_token);
+        
+        // Redirect to success page with token
+        const success_response = try std.fmt.allocPrint(self.allocator,
+            \\HTTP/1.1 200 OK
+            \\Content-Type: text/html
+            \\Set-Cookie: zepplin_token={s}; HttpOnly; Path=/; Max-Age=86400
+            \\
+            \\<!DOCTYPE html>
+            \\<html><head><title>Login Success</title></head>
+            \\<body>
+            \\<h2>Login Successful!</h2>
+            \\<p>Welcome, {s}! You can close this window.</p>
+            \\<script>
+            \\localStorage.setItem('zepplin_token', '{s}');
+            \\localStorage.setItem('zepplin_username', '{s}');
+            \\setTimeout(() => window.location.href = '/', 2000);
+            \\</script>
+            \\</body></html>
+        ,
+            .{ jwt_token, user.display_name orelse user.username, jwt_token, user.username }
+        );
+        defer self.allocator.free(success_response);
+        
+        _ = try stream.write(success_response);
+    }
+    
+    fn handleGitHubLogin(self: *Server, stream: std.net.Stream) !void {
+        // Initialize unified auth system
+        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator) catch {
+            return self.serveJsonError(stream, 500, "Authentication system not configured");
+        };
+        defer auth_system.deinit();
+        
+        // Get authorization URL
+        const auth_url = auth_system.getAuthorizationUrl(.github) catch {
+            return self.serveJsonError(stream, 500, "Failed to generate authorization URL");
+        };
+        defer self.allocator.free(auth_url);
+        
+        // Redirect to GitHub OAuth
+        const redirect_response = try std.fmt.allocPrint(self.allocator,
+            "HTTP/1.1 302 Found\r\n" ++
+            "Location: {s}\r\n" ++
+            "Set-Cookie: oauth_state=github; HttpOnly; Path=/; Max-Age=600\r\n" ++
+            "\r\n",
+            .{auth_url}
+        );
+        defer self.allocator.free(redirect_response);
+        
+        _ = try stream.write(redirect_response);
+    }
+    
+    fn handleGitHubCallback(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8) !void {
+        _ = request;
+        
+        // Parse the authorization code from query parameters
+        const query_start = std.mem.indexOf(u8, path, "?") orelse {
+            return self.serveJsonError(stream, 400, "Missing authorization code");
+        };
+        const query = path[query_start + 1..];
+        
+        var code: ?[]const u8 = null;
+        var state: ?[]const u8 = null;
+        var error_param: ?[]const u8 = null;
+        
+        var params = std.mem.splitSequence(u8, query, "&");
+        while (params.next()) |param| {
+            if (std.mem.startsWith(u8, param, "code=")) {
+                code = param[5..];
+            } else if (std.mem.startsWith(u8, param, "state=")) {
+                state = param[6..];
+            } else if (std.mem.startsWith(u8, param, "error=")) {
+                error_param = param[6..];
+            }
+        }
+        
+        if (error_param) |err| {
+            const error_msg = try std.fmt.allocPrint(self.allocator, "OAuth error: {s}", .{err});
+            defer self.allocator.free(error_msg);
+            return self.serveJsonError(stream, 400, error_msg);
+        }
+        
+        const auth_code = code orelse {
+            return self.serveJsonError(stream, 400, "Missing authorization code");
+        };
+        
+        // TODO: Validate state parameter for CSRF protection
+        if (state) |_| {
+            // State validation would go here
+        }
+        
+        // Initialize unified auth system
+        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator) catch {
+            return self.serveJsonError(stream, 500, "Authentication system not configured");
+        };
+        defer auth_system.deinit();
+        
+        // Exchange code for user info
+        const user = auth_system.handleCallback(.github, auth_code) catch {
+            return self.serveJsonError(stream, 500, "Failed to exchange authorization code");
+        };
+        
+        // Create JWT token
+        const jwt_token = auth_system.createJWT(user) catch {
+            return self.serveJsonError(stream, 500, "Failed to create session token");
+        };
+        defer self.allocator.free(jwt_token);
+        
+        // Redirect to success page with token
+        const success_response = try std.fmt.allocPrint(self.allocator,
+            \\HTTP/1.1 200 OK
+            \\Content-Type: text/html
+            \\Set-Cookie: zepplin_token={s}; HttpOnly; Path=/; Max-Age=86400
+            \\
+            \\<!DOCTYPE html>
+            \\<html><head><title>Login Success</title></head>
+            \\<body>
+            \\<h2>Login Successful!</h2>
+            \\<p>Welcome, {s}! You can close this window.</p>
+            \\<script>
+            \\localStorage.setItem('zepplin_token', '{s}');
+            \\localStorage.setItem('zepplin_username', '{s}');
+            \\setTimeout(() => window.location.href = '/', 2000);
+            \\</script>
+            \\</body></html>
+        ,
+            .{ jwt_token, user.display_name orelse user.username, jwt_token, user.username }
+        );
+        defer self.allocator.free(success_response);
+        
+        _ = try stream.write(success_response);
     }
 };
