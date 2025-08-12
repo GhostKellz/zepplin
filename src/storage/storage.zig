@@ -72,12 +72,18 @@ pub const Storage = struct {
         var file_path_buffer: [768]u8 = undefined;
         const file_path = try std.fmt.bufPrint(&file_path_buffer, "{s}/{s}", .{ package_dir, filename });
 
-        // Calculate checksum using shroud
-        const shroud = @import("shroud");
-        const checksum_bytes = shroud.ghostcipher.zcrypto.hash.sha256(package_data);
+        // Calculate checksum using std library
+        var checksum_bytes: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(package_data, &checksum_bytes, .{});
 
-        // Convert to hex string
-        const checksum = try std.fmt.allocPrint(self.allocator, "{}", .{std.fmt.fmtSliceHexLower(&checksum_bytes)});
+        // Convert to hex string manually
+        var checksum_buf: [64]u8 = undefined; // SHA256 is 32 bytes, hex is 64 chars
+        const hex_chars = "0123456789abcdef";
+        for (checksum_bytes, 0..) |byte, i| {
+            checksum_buf[i * 2] = hex_chars[byte >> 4];
+            checksum_buf[i * 2 + 1] = hex_chars[byte & 0xF];
+        }
+        const checksum = try self.allocator.dupe(u8, checksum_buf[0..]);
 
         // Write package file
         const file = try std.fs.cwd().createFile(file_path, .{});

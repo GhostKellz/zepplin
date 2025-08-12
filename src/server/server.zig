@@ -4,6 +4,7 @@ const Database = @import("../database/database.zig").Database;
 const Auth = @import("../auth/auth.zig").Auth;
 const Storage = @import("../storage/storage.zig").Storage;
 const ZigistryClient = @import("../zigistry/client.zig").ZigistryClient;
+const ZiglibsImporter = @import("../tools/ziglibs_import.zig").ZiglibsImporter;
 
 const RouteHandler = *const fn (self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) anyerror!void;
 const StaticHandler = *const fn (self: *Server, stream: std.net.Stream, path: []const u8) anyerror!void;
@@ -282,6 +283,19 @@ pub const Server = struct {
         self.database.deinit();
         self.storage.deinit();
     }
+
+    // Ziglibs integration method
+    pub fn syncZiglibs(self: *Server) !u32 {
+        std.log.info("🔄 Starting Ziglibs sync...", .{});
+        
+        var importer = ZiglibsImporter.init(self.allocator);
+        defer importer.deinit();
+        
+        const imported_count = try importer.importPackages(&self.database);
+        
+        std.log.info("✅ Ziglibs sync completed: {} packages imported", .{imported_count});
+        return imported_count;
+    }
     
     fn cleanupCache(self: *Server, cache: *std.HashMap([]const u8, CacheEntry, std.hash_map.StringContext, std.hash_map.default_max_load_percentage)) void {
         var iterator = cache.iterator();
@@ -466,7 +480,18 @@ pub const Server = struct {
             
             // Legacy API endpoints (backward compatibility)
             if (std.mem.startsWith(u8, path, "/api/packages")) {
-                try self.handlePackageApi(stream, path);
+                // Check for build.zig.zon endpoints first
+                if (std.mem.indexOf(u8, path, "/zon") != null) {
+                    try self.handlePackageZon(stream, path);
+                } else if (std.mem.indexOf(u8, path, "/tarball/") != null) {
+                    try self.handlePackageTarball(stream, path);
+                } else if (std.mem.indexOf(u8, path, "/hash/") != null) {
+                    try self.handlePackageHash(stream, path);
+                } else {
+                    try self.handlePackageApi(stream, path);
+                }
+            } else if (std.mem.startsWith(u8, path, "/api/resolve")) {
+                try self.handleDependencyResolve(stream, path, request);
             } else if (std.mem.startsWith(u8, path, "/api/search")) {
                 try self.handleSearchApi(stream, path);
             } else if (std.mem.startsWith(u8, path, "/api/zigistry/discover")) {
@@ -475,6 +500,8 @@ pub const Server = struct {
                 try self.handleZigistryTrending(stream, path);
             } else if (std.mem.startsWith(u8, path, "/api/zigistry/browse")) {
                 try self.handleZigistryBrowse(stream, path);
+            } else if (std.mem.startsWith(u8, path, "/api/ziglibs/packages")) {
+                try self.handleZiglibsPackages(stream, path);
             } else if (std.mem.endsWith(u8, path, ".wasm")) {
                 const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
                 defer self.allocator.free(file_path);
@@ -485,7 +512,8 @@ pub const Server = struct {
             } else if (std.mem.startsWith(u8, path, "/packages") or 
                       std.mem.startsWith(u8, path, "/search") or 
                       std.mem.startsWith(u8, path, "/trending") or 
-                      std.mem.startsWith(u8, path, "/docs")) {
+                      std.mem.startsWith(u8, path, "/docs") or
+                      std.mem.startsWith(u8, path, "/login")) {
                 // SPA routes - serve index.html
                 try self.serveStaticFile(stream, "web/templates/index.html");
             } else {
@@ -502,6 +530,8 @@ pub const Server = struct {
                 try self.handlePublishPackageV1(stream, path);
             } else if (std.mem.eql(u8, path, "/api/packages")) {
                 try self.handlePublishPackage(stream);
+            } else if (std.mem.eql(u8, path, "/api/ziglibs/sync")) {
+                try self.handleZiglibsSync(stream, request);
             } else {
                 try self.serve404(stream);
             }
@@ -2441,5 +2471,259 @@ pub const Server = struct {
         if (upload_data.file_data.len > 0) self.allocator.free(upload_data.file_data);
         if (upload_data.filename.len > 0) self.allocator.free(upload_data.filename);
         if (upload_data.content_type.len > 0) self.allocator.free(upload_data.content_type);
+    }
+
+    // Ziglibs API handlers
+    fn handleZiglibsSync(self: *Server, stream: std.net.Stream, request: []const u8) !void {
+        // Check authentication
+        const user = try self.requireAuth(stream, request);
+        if (user == null) return; // Error already sent by requireAuth
+        
+        const u = user.?;
+        defer self.allocator.free(u.username);
+        
+        std.log.info("🔄 Starting Ziglibs sync requested by user: {s}", .{u.username});
+        
+        const imported_count = self.syncZiglibs() catch |err| {
+            std.log.err("Failed to sync Ziglibs: {}", .{err});
+            try self.serveJsonError(stream, 500, "Failed to sync Ziglibs packages");
+            return;
+        };
+        
+        const response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "success": true,
+            \\  "imported_count": {},
+            \\  "message": "Successfully imported {} Ziglibs packages"
+            \\}}
+        , .{ imported_count, imported_count });
+        defer self.allocator.free(response);
+        
+        try self.serveJson(stream, 200, response);
+    }
+
+    fn handleZiglibsPackages(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse query parameters for pagination
+        var limit: ?usize = 50;
+        var offset: ?usize = 0;
+        
+        if (std.mem.indexOf(u8, path, "?")) |query_start| {
+            const query = path[query_start + 1..];
+            var params = std.mem.splitScalar(u8, query, '&');
+            
+            while (params.next()) |param| {
+                if (std.mem.startsWith(u8, param, "limit=")) {
+                    limit = std.fmt.parseInt(usize, param[6..], 10) catch 50;
+                } else if (std.mem.startsWith(u8, param, "offset=")) {
+                    offset = std.fmt.parseInt(usize, param[7..], 10) catch 0;
+                }
+            }
+        }
+        
+        const packages = self.database.listZiglibsPackages(limit, offset) catch |err| {
+            std.log.err("Failed to list Ziglibs packages: {}", .{err});
+            try self.serveJsonError(stream, 500, "Failed to fetch Ziglibs packages");
+            return;
+        };
+        defer {
+            for (packages) |pkg| {
+                self.allocator.free(pkg.owner);
+                self.allocator.free(pkg.repo);
+                if (pkg.description) |desc| self.allocator.free(desc);
+                // TODO: Free topics array when implemented
+                if (pkg.license) |license| self.allocator.free(license);
+                if (pkg.homepage) |homepage| self.allocator.free(homepage);
+                if (pkg.github_url) |url| self.allocator.free(url);
+            }
+            self.allocator.free(packages);
+        }
+        
+        const total_count = self.database.countZiglibsPackages() catch 0;
+        
+        // Build JSON response
+        var json_packages = std.ArrayList(u8).init(self.allocator);
+        defer json_packages.deinit();
+        
+        try json_packages.appendSlice("[");
+        for (packages, 0..) |pkg, i| {
+            if (i > 0) try json_packages.appendSlice(",");
+            
+            const pkg_json = try std.fmt.allocPrint(self.allocator,
+                \\{{
+                \\  "owner": "{s}",
+                \\  "repo": "{s}",
+                \\  "description": "{s}",
+                \\  "license": "{s}",
+                \\  "homepage": "{s}",
+                \\  "github_url": "{s}",
+                \\  "github_stars": {},
+                \\  "source": "ziglibs"
+                \\}}
+            , .{
+                pkg.owner,
+                pkg.repo,
+                pkg.description orelse "",
+                pkg.license orelse "",
+                pkg.homepage orelse "",
+                pkg.github_url orelse "",
+                pkg.github_stars,
+            });
+            defer self.allocator.free(pkg_json);
+            
+            try json_packages.appendSlice(pkg_json);
+        }
+        try json_packages.appendSlice("]");
+        
+        const response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "packages": {s},
+            \\  "total_count": {},
+            \\  "limit": {},
+            \\  "offset": {}
+            \\}}
+        , .{ json_packages.items, total_count, limit orelse 50, offset orelse 0 });
+        defer self.allocator.free(response);
+        
+        try self.serveJson(stream, 200, response);
+    }
+
+    // build.zig.zon integration endpoints
+    fn handlePackageZon(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse /api/packages/{name}/zon
+        const prefix = "/api/packages/";
+        const suffix = "/zon";
+        
+        if (!std.mem.startsWith(u8, path, prefix) or !std.mem.endsWith(u8, path, suffix)) {
+            return self.serveJsonError(stream, 404, "Not Found");
+        }
+        
+        const name_start = prefix.len;
+        const name_end = path.len - suffix.len;
+        const package_name = path[name_start..name_end];
+        
+        // For now, return a mock .zon format
+        const zon_response = try std.fmt.allocPrint(self.allocator,
+            \\.{{
+            \\    .name = "{s}",
+            \\    .version = "0.1.0",
+            \\    .dependencies = .{{
+            \\        .{s} = .{{
+            \\            .url = "https://zig.cktech.org/api/packages/{s}/tarball/0.1.0",
+            \\            .hash = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            \\        }},
+            \\    }},
+            \\}}
+        , .{ package_name, package_name, package_name });
+        defer self.allocator.free(zon_response);
+        
+        const full_response = try std.fmt.allocPrint(self.allocator,
+            "HTTP/1.1 200 OK\r\n" ++
+            "Content-Type: text/plain\r\n" ++
+            "Content-Length: {}\r\n" ++
+            "Access-Control-Allow-Origin: *\r\n" ++
+            "\r\n" ++
+            "{s}",
+            .{ zon_response.len, zon_response }
+        );
+        defer self.allocator.free(full_response);
+        
+        _ = try stream.write(full_response);
+    }
+    
+    fn handlePackageTarball(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse /api/packages/{name}/tarball/{version}
+        const prefix = "/api/packages/";
+        const tarball_marker = "/tarball/";
+        
+        const name_start = prefix.len;
+        const tarball_pos = std.mem.indexOf(u8, path, tarball_marker) orelse {
+            return self.serveJsonError(stream, 404, "Not Found");
+        };
+        
+        const package_name = path[name_start..tarball_pos];
+        const version = path[tarball_pos + tarball_marker.len..];
+        
+        // For now, redirect to a mock tarball URL
+        const redirect_url = try std.fmt.allocPrint(self.allocator,
+            "https://github.com/ziglibs/{s}/archive/refs/tags/v{s}.tar.gz",
+            .{ package_name, version }
+        );
+        defer self.allocator.free(redirect_url);
+        
+        const response = try std.fmt.allocPrint(self.allocator,
+            "HTTP/1.1 302 Found\r\n" ++
+            "Location: {s}\r\n" ++
+            "Access-Control-Allow-Origin: *\r\n" ++
+            "\r\n",
+            .{redirect_url}
+        );
+        defer self.allocator.free(response);
+        
+        _ = try stream.write(response);
+    }
+    
+    fn handlePackageHash(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse /api/packages/{name}/hash/{version}
+        const prefix = "/api/packages/";
+        const hash_marker = "/hash/";
+        
+        const name_start = prefix.len;
+        const hash_pos = std.mem.indexOf(u8, path, hash_marker) orelse {
+            return self.serveJsonError(stream, 404, "Not Found");
+        };
+        
+        const package_name = path[name_start..hash_pos];
+        const version = path[hash_pos + hash_marker.len..];
+        
+        _ = package_name;
+        _ = version;
+        
+        // For now, return a mock hash
+        const hash = "1220" ++ "abcdef0123456789" ** 4; // Mock SHA256 hash in hex
+        
+        const response = try std.fmt.allocPrint(self.allocator,
+            "HTTP/1.1 200 OK\r\n" ++
+            "Content-Type: text/plain\r\n" ++
+            "Content-Length: {}\r\n" ++
+            "Access-Control-Allow-Origin: *\r\n" ++
+            "\r\n" ++
+            "{s}",
+            .{ hash.len, hash }
+        );
+        defer self.allocator.free(response);
+        
+        _ = try stream.write(response);
+    }
+    
+    fn handleDependencyResolve(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8) !void {
+        _ = path;
+        
+        // Parse the POST body to get dependency requirements
+        const body_start = std.mem.indexOf(u8, request, "\r\n\r\n") orelse {
+            return self.serveJsonError(stream, 400, "Bad Request");
+        };
+        const body = request[body_start + 4..];
+        
+        // For now, return a simple resolution
+        const resolution = if (body.len > 0)
+            \\{
+            \\  "resolved": true,
+            \\  "packages": [
+            \\    {
+            \\      "name": "example",
+            \\      "version": "0.1.0",
+            \\      "url": "https://zig.cktech.org/api/packages/example/tarball/0.1.0",
+            \\      "hash": "1220abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+            \\    }
+            \\  ]
+            \\}
+        else
+            \\{
+            \\  "resolved": false,
+            \\  "error": "No dependencies provided"
+            \\}
+        ;
+        
+        try self.serveJson(stream, 200, resolution);
     }
 };

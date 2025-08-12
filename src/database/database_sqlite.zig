@@ -68,13 +68,17 @@ pub const Database = struct {
             \\  repo TEXT NOT NULL,
             \\  description TEXT,
             \\  topics TEXT,
+            \\  category TEXT,
+            \\  keywords TEXT,
             \\  license TEXT,
             \\  homepage TEXT,
             \\  github_url TEXT,
             \\  github_stars INTEGER DEFAULT 0,
+            \\  downloads INTEGER DEFAULT 0,
             \\  created_at INTEGER,
             \\  updated_at INTEGER,
             \\  is_private INTEGER DEFAULT 0,
+            \\  source TEXT DEFAULT 'github',
             \\  PRIMARY KEY (owner, repo)
             \\)
         ;
@@ -406,6 +410,7 @@ pub const Database = struct {
     fn getMockPackages(self: *Database) ![]types.PackageMetadata {
         var packages = std.ArrayList(types.PackageMetadata).init(self.allocator);
 
+        // Cryptography category
         try packages.append(types.PackageMetadata{
             .name = try self.allocator.dupe(u8, "zcrypto"),
             .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
@@ -436,6 +441,28 @@ pub const Database = struct {
             .dependencies = &[_]types.Dependency{},
         });
 
+        // Web category
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "zap"),
+            .version = types.Version{ .major = 0, .minor = 2, .patch = 1 },
+            .description = try self.allocator.dupe(u8, "⚡ Blazingly fast web framework for Zig"),
+            .author = try self.allocator.dupe(u8, "renerocksai"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/zigzap/zap"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "httpz"),
+            .version = types.Version{ .major = 0, .minor = 3, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "HTTP/1.1 server for Zig"),
+            .author = try self.allocator.dupe(u8, "karlseguin"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/karlseguin/http.zig"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // System/Tools category
         try packages.append(types.PackageMetadata{
             .name = try self.allocator.dupe(u8, "xev"),
             .version = types.Version{ .major = 0, .minor = 2, .patch = 0 },
@@ -443,6 +470,148 @@ pub const Database = struct {
             .author = try self.allocator.dupe(u8, "Mitchell Hashimoto"),
             .license = try self.allocator.dupe(u8, "MIT"),
             .repository = try self.allocator.dupe(u8, "https://github.com/mitchellh/libxev"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "known-folders"),
+            .version = types.Version{ .major = 0, .minor = 7, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "Provides access to well-known folders on Linux, Windows and macOS"),
+            .author = try self.allocator.dupe(u8, "ziglibs"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/ziglibs/known-folders"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Database category
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "sqlite"),
+            .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "SQLite bindings for Zig"),
+            .author = try self.allocator.dupe(u8, "vrischmann"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/vrischmann/zig-sqlite"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Text processing
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "ziglyph"),
+            .version = types.Version{ .major = 0, .minor = 9, .patch = 1 },
+            .description = try self.allocator.dupe(u8, "Unicode text processing library for Zig"),
+            .author = try self.allocator.dupe(u8, "jecolon"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/jecolon/ziglyph"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Parsing
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "mecha"),
+            .version = types.Version{ .major = 0, .minor = 5, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "A parser combinator library for Zig"),
+            .author = try self.allocator.dupe(u8, "Hejsil"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/Hejsil/mecha"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // CLI
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "clap"),
+            .version = types.Version{ .major = 0, .minor = 7, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "Command line argument parsing library"),
+            .author = try self.allocator.dupe(u8, "Hejsil"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/Hejsil/zig-clap"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Graphics
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "zgl"),
+            .version = types.Version{ .major = 0, .minor = 2, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "Zig OpenGL bindings"),
+            .author = try self.allocator.dupe(u8, "ziglibs"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/ziglibs/zgl"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Math
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "zalgebra"),
+            .version = types.Version{ .major = 0, .minor = 3, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "Linear algebra library for games and graphics"),
+            .author = try self.allocator.dupe(u8, "kooparse"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/kooparse/zalgebra"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // JSON
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "json"),
+            .version = types.Version{ .major = 0, .minor = 10, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "JSON parser for Zig"),
+            .author = try self.allocator.dupe(u8, "getty-zig"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/getty-zig/json"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Testing
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "ztest"),
+            .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "Enhanced testing framework for Zig"),
+            .author = try self.allocator.dupe(u8, "cktech"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/cktech/ztest"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Networking
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "network"),
+            .version = types.Version{ .major = 0, .minor = 5, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "Cross-platform networking library"),
+            .author = try self.allocator.dupe(u8, "MasterQ32"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/MasterQ32/zig-network"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Compression
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "zstd"),
+            .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "Zstandard compression library bindings"),
+            .author = try self.allocator.dupe(u8, "dweiller"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/dweiller/zstd"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Data structures
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "zigds"),
+            .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "Advanced data structures for Zig"),
+            .author = try self.allocator.dupe(u8, "cktech"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/cktech/zigds"),
+            .dependencies = &[_]types.Dependency{},
+        });
+
+        // Logging
+        try packages.append(types.PackageMetadata{
+            .name = try self.allocator.dupe(u8, "zlog"),
+            .version = types.Version{ .major = 0, .minor = 2, .patch = 0 },
+            .description = try self.allocator.dupe(u8, "Structured logging library for Zig"),
+            .author = try self.allocator.dupe(u8, "cktech"),
+            .license = try self.allocator.dupe(u8, "MIT"),
+            .repository = try self.allocator.dupe(u8, "https://github.com/cktech/zlog"),
             .dependencies = &[_]types.Dependency{},
         });
 
@@ -471,7 +640,7 @@ pub const Database = struct {
             package.github_stars,
             package.created_at,
             package.updated_at,
-            if (package.is_private) 1 else 0,
+            @as(i32, if (package.is_private) 1 else 0),
         });
         defer self.allocator.free(sql);
 
@@ -1108,5 +1277,76 @@ pub const Database = struct {
         _ = c.sqlite3_bind_text(stmt, 1, username_z.ptr, -1, null);
         
         return c.sqlite3_step(stmt) == c.SQLITE_ROW;
+    }
+
+    // Ziglibs-specific database methods
+    pub fn listZiglibsPackages(self: *Database, limit: ?usize, offset: ?usize) ![]types.Package {
+        const limit_val = limit orelse 50;
+        const offset_val = offset orelse 0;
+        
+        var stmt: ?*c.sqlite3_stmt = null;
+        const sql = "SELECT owner, repo, description, topics, license, homepage, github_url, github_stars, created_at, updated_at FROM packages WHERE source = 'ziglibs' ORDER BY updated_at DESC LIMIT ? OFFSET ?";
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+        
+        if (c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null) != c.SQLITE_OK) {
+            return error.DatabaseError;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+        
+        _ = c.sqlite3_bind_int(stmt, 1, @intCast(limit_val));
+        _ = c.sqlite3_bind_int(stmt, 2, @intCast(offset_val));
+        
+        var packages = std.ArrayList(types.Package).init(self.allocator);
+        defer packages.deinit();
+        
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const owner = c.sqlite3_column_text(stmt, 0);
+            const repo = c.sqlite3_column_text(stmt, 1);
+            const description = c.sqlite3_column_text(stmt, 2);
+            // const topics = c.sqlite3_column_text(stmt, 3); // TODO: Parse topics
+            const license = c.sqlite3_column_text(stmt, 4);
+            const homepage = c.sqlite3_column_text(stmt, 5);
+            const github_url = c.sqlite3_column_text(stmt, 6);
+            const github_stars = c.sqlite3_column_int(stmt, 7);
+            const created_at = c.sqlite3_column_int64(stmt, 8);
+            const updated_at = c.sqlite3_column_int64(stmt, 9);
+            
+            const package = types.Package{
+                .owner = if (owner != null) try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(owner)))) else try self.allocator.dupe(u8, ""),
+                .repo = if (repo != null) try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(repo)))) else try self.allocator.dupe(u8, ""),
+                .description = if (description != null) try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(description)))) else null,
+                .topics = &.{}, // TODO: Parse comma-separated topics from database
+                .license = if (license != null) try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(license)))) else null,
+                .homepage = if (homepage != null) try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(homepage)))) else null,
+                .github_url = if (github_url != null) try self.allocator.dupe(u8, std.mem.span(@as([*:0]const u8, @ptrCast(github_url)))) else null,
+                .github_stars = @intCast(github_stars),
+                .created_at = created_at,
+                .updated_at = updated_at,
+                .is_private = false,
+            };
+            
+            try packages.append(package);
+        }
+        
+        return packages.toOwnedSlice();
+    }
+
+    pub fn countZiglibsPackages(self: *Database) !u32 {
+        var stmt: ?*c.sqlite3_stmt = null;
+        const sql = "SELECT COUNT(*) FROM packages WHERE source = 'ziglibs'";
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+        
+        if (c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null) != c.SQLITE_OK) {
+            return error.DatabaseError;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+        
+        if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            return @intCast(c.sqlite3_column_int(stmt, 0));
+        }
+        
+        return 0;
     }
 };
