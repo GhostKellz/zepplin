@@ -169,7 +169,7 @@ pub const TomlParser = struct {
     }
 
     pub fn generateToml(self: *TomlParser, config: ProjectConfig) ![]u8 {
-        var output = std.ArrayList(u8).init(self.allocator);
+        var output = std.array_list.AlignedManaged(u8, null).init(self.allocator);
 
         // Package section
         try output.appendSlice("[package]\n");

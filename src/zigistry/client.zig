@@ -88,7 +88,7 @@ pub const ZigistryClient = struct {
         _ = query;
         _ = limit;
 
-        var packages = std.ArrayList(ZigistryPackage).init(self.allocator);
+        var packages = std.array_list.AlignedManaged(ZigistryPackage, null).init(self.allocator);
 
         // Mock data based on popular Zig packages
         try packages.append(ZigistryPackage{
@@ -176,7 +176,7 @@ pub const ZigistryClient = struct {
 
     pub fn getCategories(self: *ZigistryClient) ![][]const u8 {
         // Return popular categories
-        var categories = std.ArrayList([]const u8).init(self.allocator);
+        var categories = std.array_list.AlignedManaged([]const u8, null).init(self.allocator);
 
         try categories.append(try self.allocator.dupe(u8, "web"));
         try categories.append(try self.allocator.dupe(u8, "cli"));
@@ -191,7 +191,7 @@ pub const ZigistryClient = struct {
     }
 
     fn createTopics(self: *ZigistryClient, topic_strings: []const []const u8) ![][]const u8 {
-        var topics = std.ArrayList([]const u8).init(self.allocator);
+        var topics = std.array_list.AlignedManaged([]const u8, null).init(self.allocator);
         for (topic_strings) |topic| {
             try topics.append(try self.allocator.dupe(u8, topic));
         }
@@ -199,7 +199,7 @@ pub const ZigistryClient = struct {
     }
 
     fn duplicateTopics(self: *ZigistryClient, topics: [][]const u8) ![][]const u8 {
-        var new_topics = std.ArrayList([]const u8).init(self.allocator);
+        var new_topics = std.array_list.AlignedManaged([]const u8, null).init(self.allocator);
         for (topics) |topic| {
             try new_topics.append(try self.allocator.dupe(u8, topic));
         }

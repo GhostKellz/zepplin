@@ -354,7 +354,7 @@ pub const Database = struct {
         if (result != c.SQLITE_OK) return self.getMockPackages();
         defer _ = c.sqlite3_finalize(stmt);
 
-        var packages = std.ArrayList(types.PackageMetadata).init(self.allocator);
+        var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
 
         while (true) {
             result = c.sqlite3_step(stmt);
@@ -408,7 +408,7 @@ pub const Database = struct {
     }
 
     fn getMockPackages(self: *Database) ![]types.PackageMetadata {
-        var packages = std.ArrayList(types.PackageMetadata).init(self.allocator);
+        var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
 
         // Cryptography category
         try packages.append(types.PackageMetadata{
@@ -750,7 +750,7 @@ pub const Database = struct {
         const sql = try std.fmt.allocPrint(self.allocator, "SELECT id, owner, repo, tag_name, name, body, draft, prerelease, created_at, published_at, tarball_url, zipball_url, download_url, file_size, sha256 FROM releases WHERE owner = '{s}' AND repo = '{s}' ORDER BY published_at DESC", .{ owner, repo });
         defer self.allocator.free(sql);
 
-        var releases = std.ArrayList(types.Release).init(self.allocator);
+        var releases = std.array_list.AlignedManaged(types.Release, null).init(self.allocator);
         defer releases.deinit();
 
         const sql_z = try self.allocator.dupeZ(u8, sql);
@@ -967,7 +967,7 @@ pub const Database = struct {
         , .{ query, query, query, query, limit });
         defer self.allocator.free(sql);
 
-        var results = std.ArrayList(types.SearchResult).init(self.allocator);
+        var results = std.array_list.AlignedManaged(types.SearchResult, null).init(self.allocator);
         defer results.deinit();
 
         const sql_z = try self.allocator.dupeZ(u8, sql);
@@ -1125,7 +1125,7 @@ pub const Database = struct {
     fn serializeTopics(self: *Database, topics: [][]const u8) ![]u8 {
         if (topics.len == 0) return self.allocator.dupe(u8, "[]");
 
-        var json = std.ArrayList(u8).init(self.allocator);
+        var json = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json.deinit();
 
         try json.append('[');
@@ -1144,7 +1144,7 @@ pub const Database = struct {
         // Optimized JSON array parsing with state machine
         if (std.mem.eql(u8, json_str, "[]")) return &[_][]const u8{};
 
-        var topics = std.ArrayList([]const u8).init(self.allocator);
+        var topics = std.array_list.AlignedManaged([]const u8, null).init(self.allocator);
         defer topics.deinit();
 
         // State machine for efficient parsing
@@ -1297,7 +1297,7 @@ pub const Database = struct {
         _ = c.sqlite3_bind_int(stmt, 1, @intCast(limit_val));
         _ = c.sqlite3_bind_int(stmt, 2, @intCast(offset_val));
         
-        var packages = std.ArrayList(types.Package).init(self.allocator);
+        var packages = std.array_list.AlignedManaged(types.Package, null).init(self.allocator);
         defer packages.deinit();
         
         while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {

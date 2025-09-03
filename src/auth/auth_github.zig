@@ -190,7 +190,7 @@ pub fn parseAccessTokenResponse(allocator: std.mem.Allocator, response: []const 
 }
 
 fn urlDecode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
-    var decoded = std.ArrayList(u8).init(allocator);
+    var decoded = std.array_list.AlignedManaged(u8, null).init(allocator);
     defer decoded.deinit();
     
     var i: usize = 0;

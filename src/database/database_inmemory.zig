@@ -9,7 +9,7 @@ const types = @import("../common/types.zig");
 /// persistent storage with excellent performance.
 pub const Database = struct {
     allocator: std.mem.Allocator,
-    packages: std.ArrayList(types.Package),
+    packages: std.array_list.AlignedManaged(types.Package, null),
     users: std.StringHashMap(User),
     download_stats: std.StringHashMap(u64),
 
@@ -28,7 +28,7 @@ pub const Database = struct {
 
         var database = Database{
             .allocator = allocator,
-            .packages = std.ArrayList(types.Package).init(allocator),
+            .packages = std.array_list.AlignedManaged(types.Package, null).init(allocator),
             .users = std.StringHashMap(User).init(allocator),
             .download_stats = std.StringHashMap(u64).init(allocator),
         };
@@ -130,7 +130,7 @@ pub const Database = struct {
     }
 
     pub fn searchPackages(self: *Database, query: []const u8) ![]types.Package {
-        var results = std.ArrayList(types.Package).init(self.allocator);
+        var results = std.array_list.AlignedManaged(types.Package, null).init(self.allocator);
         defer results.deinit();
 
         for (self.packages.items) |package| {

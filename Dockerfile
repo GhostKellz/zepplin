@@ -10,12 +10,10 @@ RUN apk add --no-cache \
   git \
   && rm -rf /var/cache/apk/*
 
-# Install Zig (latest dev build)
-# You can override this with --build-arg ZIG_VERSION=0.16.0-dev.164+bc7955306
-ARG ZIG_VERSION=0.16.0-dev.164+bc7955306
-RUN curl -L "https://ziglang.org/builds/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -o /tmp/zig.tar.xz \
+# Install Zig master build (latest development version) 
+RUN curl -L "https://ziglang.org/builds/zig-x86_64-linux-0.16.0-dev.164+bc7955306.tar.xz" -o /tmp/zig.tar.xz \
   && tar -xJf /tmp/zig.tar.xz -C /opt \
-  && ln -s "/opt/zig-x86_64-linux-${ZIG_VERSION}/zig" /usr/local/bin/zig \
+  && ln -s /opt/zig-x86_64-linux-*/zig /usr/local/bin/zig \
   && rm /tmp/zig.tar.xz \
   && zig version
 

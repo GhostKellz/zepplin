@@ -180,7 +180,7 @@ pub const Server = struct {
     
     // Route optimization
     exact_routes: std.HashMap([]const u8, RouteHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
-    prefix_routes: std.ArrayList(PrefixRoute),
+    prefix_routes: std.array_list.AlignedManaged(PrefixRoute, null),
     static_routes: std.HashMap([]const u8, StaticHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
     
     // Response caching
@@ -259,7 +259,7 @@ pub const Server = struct {
             .storage = storage,
             .zigistry = zigistry,
             .exact_routes = std.HashMap([]const u8, RouteHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
-            .prefix_routes = std.ArrayList(PrefixRoute).init(allocator),
+            .prefix_routes = std.array_list.AlignedManaged(PrefixRoute, null).init(allocator),
             .static_routes = std.HashMap([]const u8, StaticHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
             .response_cache = std.HashMap([]const u8, CacheEntry, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
             .file_cache = LRUCache.init(allocator, 100), // Cache up to 100 files
@@ -976,7 +976,7 @@ pub const Server = struct {
             }
 
             // Build JSON response
-            var json_list = std.ArrayList(u8).init(self.allocator);
+            var json_list = std.array_list.AlignedManaged(u8, null).init(self.allocator);
             defer json_list.deinit();
 
             try json_list.appendSlice("{\"packages\":[");
@@ -1054,7 +1054,7 @@ pub const Server = struct {
         }
 
         // Build JSON response
-        var json_list = std.ArrayList(u8).init(self.allocator);
+        var json_list = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json_list.deinit();
 
         try json_list.appendSlice("{\"results\":[");
@@ -1154,7 +1154,7 @@ pub const Server = struct {
         }
 
         // Build JSON response
-        var json_list = std.ArrayList(u8).init(self.allocator);
+        var json_list = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json_list.deinit();
 
         try json_list.appendSlice("{\"packages\":[");
@@ -1162,12 +1162,14 @@ pub const Server = struct {
             if (i > 0) try json_list.appendSlice(",");
 
             const topics_json = blk: {
-                var topics_str = std.ArrayList(u8).init(self.allocator);
+                var topics_str = std.array_list.AlignedManaged(u8, null).init(self.allocator);
                 defer topics_str.deinit();
                 try topics_str.appendSlice("[");
                 for (pkg.topics, 0..) |topic, j| {
                     if (j > 0) try topics_str.appendSlice(",");
-                    try topics_str.writer().print("\"{s}\"", .{topic});
+                    const formatted = try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{topic});
+                    defer self.allocator.free(formatted);
+                    try topics_str.appendSlice(formatted);
                 }
                 try topics_str.appendSlice("]");
                 break :blk try topics_str.toOwnedSlice();
@@ -1196,7 +1198,9 @@ pub const Server = struct {
             try json_list.appendSlice(pkg_json);
         }
         try json_list.appendSlice("],\"total\":");
-        try json_list.writer().print("{}", .{packages.len});
+        const formatted = try std.fmt.allocPrint(self.allocator, "{}", .{packages.len});
+        defer self.allocator.free(formatted);
+        try json_list.appendSlice(formatted);
         try json_list.appendSlice("}");
 
         const json_response = try json_list.toOwnedSlice();
@@ -1219,7 +1223,7 @@ pub const Server = struct {
         }
 
         // Build JSON response
-        var json_list = std.ArrayList(u8).init(self.allocator);
+        var json_list = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json_list.deinit();
 
         try json_list.appendSlice("{\"packages\":[");
@@ -1227,12 +1231,14 @@ pub const Server = struct {
             if (i > 0) try json_list.appendSlice(",");
 
             const topics_json = blk: {
-                var topics_str = std.ArrayList(u8).init(self.allocator);
+                var topics_str = std.array_list.AlignedManaged(u8, null).init(self.allocator);
                 defer topics_str.deinit();
                 try topics_str.appendSlice("[");
                 for (pkg.topics, 0..) |topic, j| {
                     if (j > 0) try topics_str.appendSlice(",");
-                    try topics_str.writer().print("\"{s}\"", .{topic});
+                    const formatted = try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{topic});
+                    defer self.allocator.free(formatted);
+                    try topics_str.appendSlice(formatted);
                 }
                 try topics_str.appendSlice("]");
                 break :blk try topics_str.toOwnedSlice();
@@ -1261,7 +1267,9 @@ pub const Server = struct {
             try json_list.appendSlice(pkg_json);
         }
         try json_list.appendSlice("],\"total\":");
-        try json_list.writer().print("{}", .{packages.len});
+        const formatted = try std.fmt.allocPrint(self.allocator, "{}", .{packages.len});
+        defer self.allocator.free(formatted);
+        try json_list.appendSlice(formatted);
         try json_list.appendSlice("}");
 
         const json_response = try json_list.toOwnedSlice();
@@ -1290,7 +1298,7 @@ pub const Server = struct {
         }
 
         // Build JSON response
-        var json_list = std.ArrayList(u8).init(self.allocator);
+        var json_list = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json_list.deinit();
 
         try json_list.appendSlice("{\"packages\":[");
@@ -1298,12 +1306,14 @@ pub const Server = struct {
             if (i > 0) try json_list.appendSlice(",");
 
             const topics_json = blk: {
-                var topics_str = std.ArrayList(u8).init(self.allocator);
+                var topics_str = std.array_list.AlignedManaged(u8, null).init(self.allocator);
                 defer topics_str.deinit();
                 try topics_str.appendSlice("[");
                 for (pkg.topics, 0..) |topic, j| {
                     if (j > 0) try topics_str.appendSlice(",");
-                    try topics_str.writer().print("\"{s}\"", .{topic});
+                    const formatted = try std.fmt.allocPrint(self.allocator, "\"{s}\"", .{topic});
+                    defer self.allocator.free(formatted);
+                    try topics_str.appendSlice(formatted);
                 }
                 try topics_str.appendSlice("]");
                 break :blk try topics_str.toOwnedSlice();
@@ -1332,7 +1342,9 @@ pub const Server = struct {
             try json_list.appendSlice(pkg_json);
         }
         try json_list.appendSlice("],\"total\":");
-        try json_list.writer().print("{}", .{packages.len});
+        const formatted = try std.fmt.allocPrint(self.allocator, "{}", .{packages.len});
+        defer self.allocator.free(formatted);
+        try json_list.appendSlice(formatted);
         try json_list.appendSlice(",\"category\":\"");
         try json_list.appendSlice(category);
         try json_list.appendSlice("\"}");
@@ -1464,7 +1476,7 @@ pub const Server = struct {
             self.allocator.free(releases);
         }
 
-        var json_list = std.ArrayList(u8).init(self.allocator);
+        var json_list = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json_list.deinit();
 
         try json_list.appendSlice("[");
@@ -1589,7 +1601,7 @@ pub const Server = struct {
             self.allocator.free(releases);
         }
 
-        var json_list = std.ArrayList(u8).init(self.allocator);
+        var json_list = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json_list.deinit();
 
         try json_list.appendSlice("[");
@@ -1726,7 +1738,7 @@ pub const Server = struct {
             self.allocator.free(results);
         }
 
-        var json_list = std.ArrayList(u8).init(self.allocator);
+        var json_list = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json_list.deinit();
 
         try json_list.appendSlice("{\"items\":[");
@@ -1765,7 +1777,9 @@ pub const Server = struct {
             try json_list.appendSlice(result_json);
         }
         try json_list.appendSlice("],\"total_count\":");
-        try json_list.writer().print("{}", .{results.len});
+        const formatted = try std.fmt.allocPrint(self.allocator, "{}", .{results.len});
+        defer self.allocator.free(formatted);
+        try json_list.appendSlice(formatted);
         try json_list.appendSlice("}");
 
         const json_response = try json_list.toOwnedSlice();
@@ -2142,7 +2156,7 @@ pub const Server = struct {
     }
 
     fn serializeStringArray(self: *Server, strings: [][]const u8) ![]u8 {
-        var json = std.ArrayList(u8).init(self.allocator);
+        var json = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json.deinit();
 
         try json.append('[');
@@ -2492,7 +2506,7 @@ pub const Server = struct {
         const total_count = self.database.countZiglibsPackages() catch 0;
         
         // Build JSON response
-        var json_packages = std.ArrayList(u8).init(self.allocator);
+        var json_packages = std.array_list.AlignedManaged(u8, null).init(self.allocator);
         defer json_packages.deinit();
         
         try json_packages.appendSlice("[");

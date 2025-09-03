@@ -1,0 +1,52 @@
+# Dockerfile for pre-built Zepplin binary
+# Build locally first with: zig build -Doptimize=ReleaseFast
+# Then build this image: docker build -f Dockerfile.prebuilt -t zepplin .
+
+FROM alpine:3.19
+
+# Install runtime dependencies including SQLite
+RUN apk add --no-cache \
+  sqlite \
+  sqlite-dev \
+  sqlite-libs \
+  ca-certificates \
+  tzdata \
+  curl \
+  wget \
+  && rm -rf /var/cache/apk/*
+
+# Create non-root user for security
+RUN addgroup -g 1001 zepplin && \
+  adduser -D -s /bin/sh -u 1001 -G zepplin zepplin
+
+# Create application directories with proper permissions
+RUN mkdir -p /app/data /app/logs && \
+  chown -R zepplin:zepplin /app
+
+# Copy the pre-built binary from local build
+COPY zig-out/bin/zepplin /usr/local/bin/zepplin
+RUN chmod +x /usr/local/bin/zepplin
+
+# Switch to non-root user
+USER zepplin
+WORKDIR /app
+
+# Create persistent volume mount point
+VOLUME ["/app/data"]
+
+# Expose application port
+EXPOSE 8080
+
+# Health check for container orchestration
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+
+# Set environment variables for production
+ENV ZIG_ENV=production
+ENV ZEPPLIN_DATA_DIR=/app/data
+ENV ZEPPLIN_LOG_LEVEL=info
+ENV ZEPPLIN_DOMAIN=zig.cktech.org
+ENV ZEPPLIN_REGISTRY_NAME="CKTech Zig Registry"
+
+# Default command - start the registry server
+CMD ["zepplin", "serve", "8080", "/app/data"]

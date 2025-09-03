@@ -121,8 +121,10 @@ fn publishPackage(allocator: std.mem.Allocator) !void {
     defer build_zon_file.close();
 
     // Read and parse build.zig.zon
-    const content = try build_zon_file.readToEndAlloc(allocator, 1024 * 1024);
+    const stat = try build_zon_file.stat();
+    const content = try allocator.alloc(u8, stat.size);
     defer allocator.free(content);
+    _ = try build_zon_file.readAll(content);
 
     // Simple package metadata extraction (for now)
     var name: ?[]const u8 = null;

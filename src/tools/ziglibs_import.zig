@@ -24,7 +24,7 @@ pub const ZiglibsImporter = struct {
         
         // For now, return mock data to test the integration
         // TODO: Implement actual HTTP fetching and JSON parsing
-        var packages = std.ArrayList(types.Package).init(self.allocator);
+        var packages = std.array_list.AlignedManaged(types.Package, null).init(self.allocator);
         
         // Mock Ziglibs packages
         const mock_packages = [_]struct {

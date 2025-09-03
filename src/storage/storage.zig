@@ -128,7 +128,10 @@ pub const Storage = struct {
         };
         defer file.close();
 
-        return try file.readToEndAlloc(self.allocator, 100 * 1024 * 1024); // 100MB max
+        const stat = try file.stat();
+        const contents = try self.allocator.alloc(u8, stat.size);
+        _ = try file.readAll(contents);
+        return contents;
     }
 
     pub fn verifyPackage(self: *Storage, name: []const u8, version: types.Version, expected_checksum: []const u8) !bool {

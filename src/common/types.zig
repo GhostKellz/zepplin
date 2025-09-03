@@ -88,39 +88,56 @@ pub const PackageMetadata = struct {
     minimum_zig_version: ?[]const u8 = null,
 
     pub fn toJson(self: PackageMetadata, allocator: std.mem.Allocator) ![]u8 {
-        // Optimized JSON serialization using ArrayList for better performance
-        var json_buffer = std.ArrayList(u8).init(allocator);
-        errdefer json_buffer.deinit();
+        // Simplified JSON serialization using allocPrint
+        var json_parts = std.array_list.AlignedManaged([]const u8, null).init(allocator);
+        defer {
+            for (json_parts.items) |part| {
+                allocator.free(part);
+            }
+            json_parts.deinit();
+        }
         
-        const writer = json_buffer.writer();
-        
-        try writer.writeAll("{\n");
-        try writer.print("  \"name\": \"{s}\",\n", .{self.name});
-        try writer.print("  \"version\": \"{}.{}.{}\",\n", .{self.version.major, self.version.minor, self.version.patch});
-        try writer.print("  \"description\": \"{s}\",\n", .{self.description orelse ""});
-        try writer.print("  \"author\": \"{s}\",\n", .{self.author orelse ""});
-        try writer.print("  \"license\": \"{s}\"", .{self.license orelse ""});
+        try json_parts.append(try allocator.dupe(u8, "{\n"));
+        try json_parts.append(try std.fmt.allocPrint(allocator, "  \"name\": \"{s}\",\n", .{self.name}));
+        try json_parts.append(try std.fmt.allocPrint(allocator, "  \"version\": \"{}.{}.{}\",\n", .{self.version.major, self.version.minor, self.version.patch}));
+        try json_parts.append(try std.fmt.allocPrint(allocator, "  \"description\": \"{s}\",\n", .{self.description orelse ""}));
+        try json_parts.append(try std.fmt.allocPrint(allocator, "  \"author\": \"{s}\",\n", .{self.author orelse ""}));
+        try json_parts.append(try std.fmt.allocPrint(allocator, "  \"license\": \"{s}\"", .{self.license orelse ""}));
         
         if (self.homepage) |homepage| {
-            try writer.print(",\n  \"homepage\": \"{s}\"", .{homepage});
+            try json_parts.append(try std.fmt.allocPrint(allocator, ",\n  \"homepage\": \"{s}\"", .{homepage}));
         }
         if (self.repository) |repository| {
-            try writer.print(",\n  \"repository\": \"{s}\"", .{repository});
+            try json_parts.append(try std.fmt.allocPrint(allocator, ",\n  \"repository\": \"{s}\"", .{repository}));
         }
         if (self.keywords.len > 0) {
-            try writer.writeAll(",\n  \"keywords\": [");
+            try json_parts.append(try allocator.dupe(u8, ",\n  \"keywords\": ["));
             for (self.keywords, 0..) |keyword, i| {
-                if (i > 0) try writer.writeAll(", ");
-                try writer.print("\"{s}\"", .{keyword});
+                if (i > 0) try json_parts.append(try allocator.dupe(u8, ", "));
+                try json_parts.append(try std.fmt.allocPrint(allocator, "\"{s}\"", .{keyword}));
             }
-            try writer.writeAll("]");
+            try json_parts.append(try allocator.dupe(u8, "]"));
         }
         if (self.minimum_zig_version) |min_version| {
-            try writer.print(",\n  \"minimum_zig_version\": \"{s}\"", .{min_version});
+            try json_parts.append(try std.fmt.allocPrint(allocator, ",\n  \"minimum_zig_version\": \"{s}\"", .{min_version}));
         }
         
-        try writer.writeAll("\n}");
-        return json_buffer.toOwnedSlice();
+        try json_parts.append(try allocator.dupe(u8, "\n}"));
+        
+        // Calculate total length and concatenate
+        var total_len: usize = 0;
+        for (json_parts.items) |part| {
+            total_len += part.len;
+        }
+        
+        const result = try allocator.alloc(u8, total_len);
+        var offset: usize = 0;
+        for (json_parts.items) |part| {
+            @memcpy(result[offset..offset + part.len], part);
+            offset += part.len;
+        }
+        
+        return result;
     }
     
     pub fn toJsonStream(self: PackageMetadata, writer: anytype) !void {

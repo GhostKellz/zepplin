@@ -122,14 +122,14 @@ pub const Database = struct {
         };
         defer result.deinit();
 
-        var packages = std.ArrayList(types.PackageMetadata).init(self.allocator);
+        var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
         // TODO: Fix zqlite Row API - using mock data for now
         packages.deinit();
         return self.getMockPackages();
     }
 
     fn getMockPackages(self: *Database) ![]types.PackageMetadata {
-        var packages = std.ArrayList(types.PackageMetadata).init(self.allocator);
+        var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
 
         try packages.append(types.PackageMetadata{
             .name = "zcrypto",
@@ -184,14 +184,14 @@ pub const Database = struct {
         };
         defer result.deinit();
 
-        var packages = std.ArrayList(types.PackageMetadata).init(self.allocator);
+        var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
         // TODO: Fix zqlite Row API - using mock data with filtering for now
         packages.deinit();
         
         const all_mock_packages = try self.getMockPackages();
         defer self.allocator.free(all_mock_packages);
         
-        var filtered = std.ArrayList(types.PackageMetadata).init(self.allocator);
+        var filtered = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
         for (all_mock_packages) |pkg| {
             if (std.mem.indexOf(u8, pkg.name, query) != null or 
                 (pkg.description != null and std.mem.indexOf(u8, pkg.description.?, query) != null)) {
@@ -295,7 +295,7 @@ pub const Database = struct {
     pub fn getPackageReleases(self: *Database, owner: []const u8, repo: []const u8) ![]types.Release {
         // For now, return mock releases - in production this would query a releases table
         
-        var releases = std.ArrayList(types.Release).init(self.allocator);
+        var releases = std.array_list.AlignedManaged(types.Release, null).init(self.allocator);
         
         // Mock some releases
         try releases.append(types.Release{
@@ -381,7 +381,7 @@ pub const Database = struct {
         _ = limit;
         _ = offset;
         
-        var packages = std.ArrayList(types.PackageMetadata).init(self.allocator);
+        var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
         
         // Mock some ziglibs packages
         try packages.append(types.PackageMetadata{

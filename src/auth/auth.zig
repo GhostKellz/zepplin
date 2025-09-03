@@ -115,7 +115,7 @@ pub const Auth = struct {
         var computed_hmac: [32]u8 = undefined;
         crypto.auth.hmac.sha2.HmacSha256.create(&computed_hmac, payload, self.secret_key);
 
-        if (!crypto.utils.timingSafeEql([32]u8, computed_hmac, expected_hmac[0..32].*)) {
+        if (!crypto.timing_safe.eql([32]u8, computed_hmac, expected_hmac[0..32].*)) {
             return AuthError.InvalidToken;
         }
 
