@@ -34,11 +34,11 @@
         // Pure Zig cryptographic library for package verification and security
         .shroud = .{
             .url = "https://github.com/ghostkellz/shroud/archive/refs/heads/main.tar.gz",
-            .hash = "shroud-1.2.3-z7C8mbkLBQAWkrWAGcZpLI1ySO4_ciBrdiDYOyHdD2g0",
+            .hash = "shroud-1.2.3-z7C8ma4LBQCBwV33odlrtXLAVtQVKX1bMPhPLSO6HBL2",
         },
         .zqlite = .{
             .url = "https://github.com/ghostkellz/zqlite/archive/refs/heads/main.tar.gz",
-            .hash = "zqlite-1.2.3-0Cdu4jUPDQBCquqpemSu7xAaGBusyqvJ6JiMyZUJb1_g",
+            .hash = "zqlite-1.2.3-0Cdu4jUPDQCsNTiy7NCAPI8PqKb8_Z3FFIT3iQG0ZV36",
         },
     },
     .paths = .{

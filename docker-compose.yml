@@ -47,31 +47,6 @@ services:
       - "com.cktech.service=zepplin-registry"
       - "com.cktech.version=0.5.1"
       - "com.cktech.description=Lightning-fast Zig Package Registry with OAuth"
-      - "traefik.enable=true"
-      - "traefik.http.routers.zepplin.rule=Host(`zig.cktech.org`)"
-      - "traefik.http.routers.zepplin.tls=true"
-      - "traefik.http.routers.zepplin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.zepplin.loadbalancer.server.port=8080"
-
-  nginx:
-    image: nginx:alpine
-    container_name: zepplin-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-      - nginx_cache:/var/cache/nginx
-      - nginx_logs:/var/log/nginx
-    depends_on:
-      - zepplin-registry
-    healthcheck:
-      test: ["CMD", "nginx", "-t"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
 
 volumes:
   zepplin_data:
@@ -80,11 +55,8 @@ volumes:
   zepplin_packages:
     driver: local
     name: zepplin_packages
-  nginx_cache:
-    driver: local
-  nginx_logs:
-    driver: local
 
 networks:
   default:
-    name: zepplin-network
+    external: true
+    name: nginx-net
