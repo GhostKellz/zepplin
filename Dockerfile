@@ -65,11 +65,11 @@ WORKDIR /app
 VOLUME ["/app/data"]
 
 # Expose application port (nginx will proxy to this)
-EXPOSE 8080
+EXPOSE 8181
 
 # Health check for container orchestration
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8181/health || exit 1
 
 # Set environment variables for production
 ENV ZIG_ENV=production
@@ -79,4 +79,4 @@ ENV ZEPPLIN_DOMAIN=zig.cktech.org
 ENV ZEPPLIN_REGISTRY_NAME="CKTech Zig Registry"
 
 # Default command - start the registry server with explicit data directory
-CMD ["zepplin", "serve", "8080", "/app/data"]
+CMD ["zepplin", "serve", "8181", "/app/data"]
