@@ -8,7 +8,7 @@ services:
     container_name: zepplin-registry
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8181:8181"  # Only bind to localhost for nginx proxy
+      - "127.0.0.1:8888:8888"  # Only bind to localhost for nginx proxy
     volumes:
       - zepplin_data:/app/data
       - zepplin_packages:/app/packages
@@ -18,7 +18,7 @@ services:
       - ./logs:/app/logs
     environment:
       - ZEPPLIN_VERSION=0.5.1
-      - ZEPPLIN_PORT=8181
+      - ZEPPLIN_PORT=8888
       - ZEPPLIN_BIND_ADDRESS=0.0.0.0
       - ZEPPLIN_SECRET_KEY=${ZEPPLIN_SECRET_KEY:-insecure-default-change-me}
       - ZEPPLIN_DB_PATH=/app/data/zepplin.db
@@ -38,7 +38,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8181/api/packages"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8888/api/packages"]
       interval: 30s
       timeout: 10s
       retries: 3
