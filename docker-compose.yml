@@ -8,7 +8,7 @@ services:
     container_name: zepplin-registry
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8888:8888"  # Only bind to localhost for nginx proxy
+      - "8888:8888"  # Bind to all interfaces for external access
     volumes:
       - zepplin_data:/app/data
       - zepplin_packages:/app/packages
@@ -38,7 +38,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8888/api/packages"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8888/health"]
       interval: 30s
       timeout: 10s
       retries: 3

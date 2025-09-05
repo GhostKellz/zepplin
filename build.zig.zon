@@ -37,12 +37,12 @@
             .hash = "shroud-1.2.4-z7C8mWsWBQCJe8snoSxxMZoyAmrTX3DQkdaNFd0SrOeO",
         },
         .zqlite = .{
-            .url = "https://github.com/ghostkellz/zqlite/archive/main.tar.gz",
-            .hash = "zqlite-1.2.4-0Cdu4vElDQDCMU4mg5wplC_JPTdWAeesn49tJ92YcytA",
+            .url = "https://github.com/ghostkellz/zqlite/archive/refs/heads/main.tar.gz",
+            .hash = "zqlite-1.2.5-0Cdu4tJ8DgBa7wQAf6Oe7-6XEYcX7BeVpVKoW8PdUfAe",
         },
         .zsync = .{
-            .url = "https://github.com/ghostkellz/zsync/archive/main.tar.gz",
-            .hash = "zsync-0.4.1-KAuheT79GgBDF8ijwGGdmHwXlYboSpCDOj12VHzTQKaV",
+            .url = "https://github.com/ghostkellz/zsync/archive/refs/heads/main.tar.gz",
+            .hash = "zsync-0.5.4-KAuheV0SHQBxubuzXagj1oq5B2KE4VhMWTAAAaInwB2_",
         },
     },
     .paths = .{
