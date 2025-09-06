@@ -162,6 +162,8 @@ pub const UnifiedAuthSystem = struct {
             \\  "sub": "{}",
             \\  "username": "{s}",
             \\  "email": "{s}",
+            \\  "display_name": "{s}",
+            \\  "avatar_url": "{s}",
             \\  "provider": "{s}",
             \\  "iat": {},
             \\  "exp": {}
@@ -171,6 +173,8 @@ pub const UnifiedAuthSystem = struct {
                 user.id,
                 user.username,
                 user.email,
+                user.display_name orelse user.username,
+                user.avatar_url orelse "",
                 @tagName(user.primary_provider),
                 std.time.timestamp(),
                 std.time.timestamp() + 86400, // 24 hours

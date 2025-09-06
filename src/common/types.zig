@@ -320,3 +320,33 @@ pub const UploadData = struct {
     filename: []const u8,
     content_type: []const u8,
 };
+
+/// Comment on a package (AUR-style)
+pub const Comment = struct {
+    id: u64,
+    package_id: []const u8, // owner/repo format
+    user_id: u64,
+    username: []const u8,
+    display_name: ?[]const u8,
+    content: []const u8,
+    created_at: i64,
+    updated_at: i64,
+    is_deleted: bool = false,
+    parent_id: ?u64 = null, // For nested replies
+    
+    pub fn isReply(self: Comment) bool {
+        return self.parent_id != null;
+    }
+};
+
+/// Comment creation request
+pub const CommentRequest = struct {
+    package_id: []const u8,
+    content: []const u8,
+    parent_id: ?u64 = null,
+};
+
+/// Comment update request
+pub const CommentUpdateRequest = struct {
+    content: []const u8,
+};

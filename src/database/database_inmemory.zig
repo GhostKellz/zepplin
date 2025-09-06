@@ -12,6 +12,8 @@ pub const Database = struct {
     packages: std.array_list.AlignedManaged(types.Package, null),
     users: std.StringHashMap(User),
     download_stats: std.StringHashMap(u64),
+    comments: std.array_list.AlignedManaged(types.Comment, null),
+    comment_id_counter: std.atomic.Atomic(u64),
 
     const User = struct {
         username: []const u8,
@@ -31,6 +33,8 @@ pub const Database = struct {
             .packages = std.array_list.AlignedManaged(types.Package, null).init(allocator),
             .users = std.StringHashMap(User).init(allocator),
             .download_stats = std.StringHashMap(u64).init(allocator),
+            .comments = std.array_list.AlignedManaged(types.Comment, null).init(allocator),
+            .comment_id_counter = std.atomic.Atomic(u64).init(1),
         };
 
         // Add demo packages
@@ -108,6 +112,15 @@ pub const Database = struct {
         self.packages.deinit();
         self.users.deinit();
         self.download_stats.deinit();
+        
+        // Clean up comment memory
+        for (self.comments.items) |comment| {
+            self.allocator.free(comment.package_id);
+            self.allocator.free(comment.username);
+            if (comment.display_name) |dn| self.allocator.free(dn);
+            self.allocator.free(comment.content);
+        }
+        self.comments.deinit();
     }
 
     // Package operations
@@ -207,6 +220,61 @@ pub const Database = struct {
             total += entry.value_ptr.*;
         }
         return total;
+    }
+    
+    // Comment operations
+    pub fn addComment(self: *Database, request: types.CommentRequest, user_id: u64, username: []const u8, display_name: ?[]const u8) !u64 {
+        const comment_id = self.comment_id_counter.fetchAdd(1, .monotonic);
+        const now = std.time.timestamp();
+        
+        const comment = types.Comment{
+            .id = comment_id,
+            .package_id = try self.allocator.dupe(u8, request.package_id),
+            .user_id = user_id,
+            .username = try self.allocator.dupe(u8, username),
+            .display_name = if (display_name) |dn| try self.allocator.dupe(u8, dn) else null,
+            .content = try self.allocator.dupe(u8, request.content),
+            .created_at = now,
+            .updated_at = now,
+            .parent_id = request.parent_id,
+        };
+        
+        try self.comments.append(comment);
+        return comment_id;
+    }
+    
+    pub fn getCommentsForPackage(self: *Database, package_id: []const u8) ![]types.Comment {
+        var result = std.ArrayList(types.Comment).init(self.allocator);
+        
+        for (self.comments.items) |comment| {
+            if (std.mem.eql(u8, comment.package_id, package_id) and !comment.is_deleted) {
+                try result.append(comment);
+            }
+        }
+        
+        return result.toOwnedSlice();
+    }
+    
+    pub fn updateComment(self: *Database, comment_id: u64, user_id: u64, new_content: []const u8) !bool {
+        for (self.comments.items) |*comment| {
+            if (comment.id == comment_id and comment.user_id == user_id and !comment.is_deleted) {
+                self.allocator.free(comment.content);
+                comment.content = try self.allocator.dupe(u8, new_content);
+                comment.updated_at = std.time.timestamp();
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    pub fn deleteComment(self: *Database, comment_id: u64, user_id: u64) !bool {
+        for (self.comments.items) |*comment| {
+            if (comment.id == comment_id and comment.user_id == user_id and !comment.is_deleted) {
+                comment.is_deleted = true;
+                return true;
+            }
+        }
+        return false;
     }
 };
 

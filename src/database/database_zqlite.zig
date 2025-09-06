@@ -476,4 +476,75 @@ pub const Database = struct {
         // For now just log the package addition
         std.log.info("Mock: Adding GitHub package: {s}/{s}", .{ package.owner, package.repo });
     }
+    
+    // Comment operations (mock implementations)
+    pub fn addComment(self: *Database, request: types.CommentRequest, user_id: u64, username: []const u8, display_name: ?[]const u8) !u64 {
+        // Mock implementation - in production would insert into comments table
+        _ = self;
+        _ = request;
+        _ = user_id;
+        _ = username;
+        _ = display_name;
+        
+        // Return a mock comment ID
+        return @intCast(@mod(std.time.timestamp(), 1000000));
+    }
+    
+    pub fn getCommentsForPackage(self: *Database, package_id: []const u8) ![]types.Comment {
+        // Mock implementation - in production would query comments table
+        var comments = std.array_list.AlignedManaged(types.Comment, null).init(self.allocator);
+        
+        // Mock some comments for demonstration
+        if (std.mem.eql(u8, package_id, "mitchellh/libxev") or 
+            std.mem.eql(u8, package_id, "ziglibs/zig-json") or
+            std.mem.eql(u8, package_id, "cktech/example")) {
+            
+            try comments.append(types.Comment{
+                .id = 1,
+                .package_id = try self.allocator.dupe(u8, package_id),
+                .user_id = 123,
+                .username = try self.allocator.dupe(u8, "developer123"),
+                .display_name = try self.allocator.dupe(u8, "John Developer"),
+                .content = try self.allocator.dupe(u8, "Great package! Works perfectly with my project."),
+                .created_at = std.time.timestamp() - 86400, // 1 day ago
+                .updated_at = std.time.timestamp() - 86400,
+                .parent_id = null,
+            });
+            
+            try comments.append(types.Comment{
+                .id = 2,
+                .package_id = try self.allocator.dupe(u8, package_id),
+                .user_id = 456,
+                .username = try self.allocator.dupe(u8, "coder_jane"),
+                .display_name = try self.allocator.dupe(u8, "Jane Coder"),
+                .content = try self.allocator.dupe(u8, "Thanks for the excellent documentation. Very helpful!"),
+                .created_at = std.time.timestamp() - 3600, // 1 hour ago
+                .updated_at = std.time.timestamp() - 3600,
+                .parent_id = null,
+            });
+        }
+        
+        return comments.toOwnedSlice();
+    }
+    
+    pub fn updateComment(self: *Database, comment_id: u64, user_id: u64, new_content: []const u8) !bool {
+        // Mock implementation - in production would update comments table
+        _ = self;
+        _ = comment_id;
+        _ = user_id;
+        _ = new_content;
+        
+        // Mock success
+        return true;
+    }
+    
+    pub fn deleteComment(self: *Database, comment_id: u64, user_id: u64) !bool {
+        // Mock implementation - in production would mark comment as deleted
+        _ = self;
+        _ = comment_id;
+        _ = user_id;
+        
+        // Mock success
+        return true;
+    }
 };

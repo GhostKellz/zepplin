@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation - Zepplin Registry</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .docs-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .docs-header {
+            margin-bottom: 3rem;
+        }
+        .docs-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--lightning-400);
+            margin-bottom: 0.5rem;
+        }
+        .docs-subtitle {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+        }
+        .docs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+        .doc-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            transition: var(--transition-fast);
+        }
+        .doc-card:hover {
+            border-color: var(--lightning-400);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 214, 10, 0.1);
+        }
+        .doc-card-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+        .doc-card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+        .doc-card-description {
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            line-height: 1.6;
+        }
+        .doc-card-link {
+            color: var(--lightning-400);
+            text-decoration: none;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .doc-card-link:hover {
+            text-decoration: underline;
+        }
+        .std-modules {
+            margin-top: 3rem;
+        }
+        .std-modules-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+        .std-modules-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        .std-module {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.25rem;
+            padding: 0.75rem;
+            transition: var(--transition-fast);
+        }
+        .std-module:hover {
+            background: rgba(255, 214, 10, 0.1);
+            border-color: var(--lightning-400);
+        }
+        .std-module-name {
+            font-family: 'Fira Code', 'Courier New', monospace;
+            color: var(--lightning-400);
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img">
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/packages" class="nav-link">Browse</a>
+                    <a href="/trending" class="nav-link">Trending</a>
+                    <a href="/docs" class="nav-link active">Docs</a>
+                    <div id="auth-nav">
+                        <!-- Auth buttons will be populated by JavaScript -->
+                    </div>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <div class="docs-container">
+        <div class="docs-header">
+            <h1 class="docs-title">📚 Documentation</h1>
+            <p class="docs-subtitle">Everything you need to work with Zepplin and Zig packages</p>
+        </div>
+
+        <div class="docs-grid">
+            <div class="doc-card">
+                <div class="doc-card-icon">🚀</div>
+                <h2 class="doc-card-title">Getting Started</h2>
+                <p class="doc-card-description">
+                    Learn how to use Zepplin to manage your Zig dependencies and publish your own packages.
+                </p>
+                <a href="/docs/getting-started" class="doc-card-link">
+                    Read the guide
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </a>
+            </div>
+
+            <div class="doc-card">
+                <div class="doc-card-icon">📦</div>
+                <h2 class="doc-card-title">Publishing Packages</h2>
+                <p class="doc-card-description">
+                    Step-by-step guide to publishing your Zig packages to the Zepplin registry.
+                </p>
+                <a href="/publish" class="doc-card-link">
+                    Publish a package
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </a>
+            </div>
+
+            <div class="doc-card">
+                <div class="doc-card-icon">⚡</div>
+                <h2 class="doc-card-title">Zig Language</h2>
+                <p class="doc-card-description">
+                    Official Zig language documentation, guides, and learning resources.
+                </p>
+                <a href="https://ziglang.org/documentation/master/" target="_blank" class="doc-card-link">
+                    Visit ziglang.org
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" y1="14" x2="21" y2="3"/>
+                    </svg>
+                </a>
+            </div>
+
+            <div class="doc-card">
+                <div class="doc-card-icon">🔧</div>
+                <h2 class="doc-card-title">API Reference</h2>
+                <p class="doc-card-description">
+                    Complete API documentation for integrating with the Zepplin registry.
+                </p>
+                <a href="/docs/api" class="doc-card-link">
+                    API Documentation
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+
+        <div class="std-modules">
+            <h2 class="std-modules-title">Zig Standard Library Modules</h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+                Core modules available in the Zig standard library (v0.16.0-dev)
+            </p>
+            <div class="std-modules-list">
+                <div class="std-module">
+                    <div class="std-module-name">std.mem</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.fmt</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.io</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.fs</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.process</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.net</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.crypto</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.json</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.heap</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.hash</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.math</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.rand</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.time</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.unicode</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.http</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.compress</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.debug</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.testing</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.build</div>
+                </div>
+                <div class="std-module">
+                    <div class="std-module-name">std.zig</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 3rem; padding: 2rem; background: var(--bg-secondary); border-radius: 0.5rem; border: 1px solid var(--border-subtle);">
+            <h3 style="color: var(--lightning-400); margin-bottom: 1rem;">💡 Quick Tips</h3>
+            <ul style="color: var(--text-muted); line-height: 1.8;">
+                <li>Use <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">zig fetch</code> to download packages from Zepplin</li>
+                <li>Add dependencies to your <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">build.zig.zon</code> file</li>
+                <li>Run <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">zig build</code> to compile your project with dependencies</li>
+                <li>Check out the <a href="https://github.com/ziglang/zig/wiki" target="_blank" style="color: var(--lightning-400);">Zig Wiki</a> for community resources</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="/js/main.js"></script>
+</body>
+</html>

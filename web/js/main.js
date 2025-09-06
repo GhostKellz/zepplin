@@ -1,4 +1,4 @@
-// Zepplin Registry Frontend - v0.4.0
+// Zepplin Registry Frontend - v0.5.0
 // Lightning-fast package registry for Zig
 
 class ZepplinApp {
@@ -406,10 +406,67 @@ class ZepplinApp {
     }
     
     renderAuthenticatedNav(authNav, user) {
+        // Get stored user data from localStorage
+        const avatarUrl = localStorage.getItem('zepplin_avatar_url') || '';
+        const displayName = localStorage.getItem('zepplin_display_name') || user.username;
+        const email = localStorage.getItem('zepplin_email') || '';
+        
         authNav.innerHTML = `
-            <span class="nav-user">Welcome, ${user.username}!</span>
             <a href="/publish" class="nav-link">Publish</a>
-            <button class="nav-link nav-btn" onclick="window.zepplin.logout()">Logout</button>
+            <div class="profile-dropdown">
+                <button class="profile-trigger" onclick="window.zepplin.toggleProfileDropdown(event)">
+                    ${avatarUrl ? 
+                        `<img src="${avatarUrl}" alt="${displayName}" class="profile-avatar">` : 
+                        `<div class="profile-avatar-placeholder">${displayName.charAt(0).toUpperCase()}</div>`
+                    }
+                    <span class="profile-name">${displayName}</span>
+                    <svg class="profile-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="profile-menu" id="profile-menu">
+                    <div class="profile-menu-header">
+                        ${avatarUrl ? 
+                            `<img src="${avatarUrl}" alt="${displayName}" class="profile-menu-avatar">` : 
+                            `<div class="profile-menu-avatar-placeholder">${displayName.charAt(0).toUpperCase()}</div>`
+                        }
+                        <div class="profile-menu-info">
+                            <div class="profile-menu-name">${displayName}</div>
+                            <div class="profile-menu-email">${email}</div>
+                        </div>
+                    </div>
+                    <div class="profile-menu-divider"></div>
+                    <a href="/profile" class="profile-menu-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        My Profile
+                    </a>
+                    <a href="/packages/my" class="profile-menu-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                        </svg>
+                        My Packages
+                    </a>
+                    <a href="/settings" class="profile-menu-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M12 1v6m0 6v6m4.22-13.22l4.24 4.24M1.54 1.54l4.24 4.24M20.46 20.46l-4.24-4.24M1.54 20.46l4.24-4.24"></path>
+                        </svg>
+                        Settings
+                    </a>
+                    <div class="profile-menu-divider"></div>
+                    <button class="profile-menu-item profile-menu-logout" onclick="window.zepplin.logout()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                            <polyline points="16 17 21 12 16 7"></polyline>
+                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                        </svg>
+                        Logout
+                    </button>
+                </div>
+            </div>
         `;
     }
     
@@ -418,6 +475,22 @@ class ZepplinApp {
             <a href="/auth" class="nav-link">Login</a>
             <a href="/auth" class="nav-link nav-btn">Sign Up</a>
         `;
+    }
+    
+    toggleProfileDropdown(event) {
+        event.stopPropagation();
+        const menu = document.getElementById('profile-menu');
+        if (menu) {
+            menu.classList.toggle('active');
+            
+            // Close menu when clicking outside
+            document.addEventListener('click', function closeMenu(e) {
+                if (!menu.contains(e.target)) {
+                    menu.classList.remove('active');
+                    document.removeEventListener('click', closeMenu);
+                }
+            });
+        }
     }
     
     async logout() {
@@ -436,9 +509,12 @@ class ZepplinApp {
             }
         }
         
-        // Clear local storage
+        // Clear all auth-related local storage
         localStorage.removeItem('zepplin_token');
         localStorage.removeItem('zepplin_username');
+        localStorage.removeItem('zepplin_display_name');
+        localStorage.removeItem('zepplin_avatar_url');
+        localStorage.removeItem('zepplin_email');
         
         // Refresh the page to update UI
         window.location.reload();
@@ -491,6 +567,162 @@ const additionalStyles = `
         white-space: nowrap;
     }
     
+    /* Profile Dropdown Styles */
+    .profile-dropdown {
+        position: relative;
+        display: inline-block;
+    }
+    
+    .profile-trigger {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        background: rgba(255, 214, 10, 0.1);
+        border: 1px solid rgba(255, 214, 10, 0.2);
+        border-radius: 2rem;
+        color: var(--text-primary);
+        cursor: pointer;
+        transition: var(--transition-fast);
+    }
+    
+    .profile-trigger:hover {
+        background: rgba(255, 214, 10, 0.2);
+        border-color: var(--lightning-400);
+    }
+    
+    .profile-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+    
+    .profile-avatar-placeholder {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--lightning-400);
+        color: var(--bg-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+    
+    .profile-name {
+        font-weight: 500;
+    }
+    
+    .profile-chevron {
+        transition: transform 0.2s;
+    }
+    
+    .profile-menu {
+        position: absolute;
+        top: calc(100% + 0.5rem);
+        right: 0;
+        min-width: 280px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-subtle);
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-10px);
+        transition: all 0.2s;
+        z-index: 1000;
+    }
+    
+    .profile-menu.active {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+    
+    .profile-menu-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+    
+    .profile-menu-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+    
+    .profile-menu-avatar-placeholder {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: var(--lightning-400);
+        color: var(--bg-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 1.2rem;
+    }
+    
+    .profile-menu-info {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .profile-menu-name {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+    }
+    
+    .profile-menu-email {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .profile-menu-divider {
+        height: 1px;
+        background: var(--border-subtle);
+        margin: 0;
+    }
+    
+    .profile-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        color: var(--text-primary);
+        text-decoration: none;
+        transition: var(--transition-fast);
+        cursor: pointer;
+        border: none;
+        background: none;
+        width: 100%;
+        text-align: left;
+    }
+    
+    .profile-menu-item:hover {
+        background: rgba(255, 214, 10, 0.1);
+        color: var(--lightning-400);
+    }
+    
+    .profile-menu-logout {
+        color: var(--text-muted);
+    }
+    
+    .profile-menu-logout:hover {
+        background: rgba(255, 100, 100, 0.1);
+        color: #ff6464;
+    }
+    
     @media (max-width: 768px) {
         .mobile-menu-btn {
             display: block !important;
@@ -498,6 +730,14 @@ const additionalStyles = `
         
         .nav {
             display: none;
+        }
+        
+        .profile-menu {
+            position: fixed;
+            top: 60px;
+            right: 1rem;
+            left: 1rem;
+            min-width: auto;
         }
     }
 `;

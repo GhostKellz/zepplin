@@ -6,6 +6,8 @@ const Storage = @import("../storage/storage.zig").Storage;
 const ZigistryClient = @import("../zigistry/client.zig").ZigistryClient;
 const ZiglibsImporter = @import("../tools/ziglibs_import.zig").ZiglibsImporter;
 
+const ZEPPLIN_VERSION = "0.5.0";
+
 const RouteHandler = *const fn (self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) anyerror!void;
 const StaticHandler = *const fn (self: *Server, stream: std.net.Stream, path: []const u8) anyerror!void;
 const PrefixRoute = struct { prefix: []const u8, handler: RouteHandler };
@@ -21,6 +23,10 @@ const ServerError = error{
 const AuthenticatedUser = struct {
     username: []u8,
     user_id: i64,
+    email: []u8,
+    display_name: []u8,
+    avatar_url: []u8,
+    provider: []u8,
 };
 
 // Response cache entry
@@ -321,6 +327,13 @@ pub const Server = struct {
             }
         }.handler);
         
+        try self.exact_routes.put("/docs", struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.serveStaticFile(stream, "web/docs.html");
+            }
+        }.handler);
+        
         try self.exact_routes.put("/api/v1/registry/config", struct {
             fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
@@ -368,6 +381,19 @@ pub const Server = struct {
             fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = request; _ = request_allocator;
                 try server.handleResolveApiV1(stream, path);
+            }
+        }.handler });
+        
+        try self.prefix_routes.append(.{ .prefix = "/api/v1/comments/", .handler = struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                try server.handleCommentsApiV1(stream, path, request, request_allocator);
+            }
+        }.handler });
+        
+        try self.prefix_routes.append(.{ .prefix = "/packages/", .handler = struct {
+            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = request; _ = request_allocator;
+                try server.handlePackagePage(stream, path);
             }
         }.handler });
         
@@ -1857,6 +1883,7 @@ pub const Server = struct {
             \\  "name": "{s}",
             \\  "url": "{s}",
             \\  "api_version": "{s}",
+            \\  "version": "{s}",
             \\  "allow_public_publish": {s},
             \\  "github_compatible": true,
             \\  "features": [
@@ -1864,13 +1891,16 @@ pub const Server = struct {
             \\    "releases",
             \\    "aliases",
             \\    "search",
-            \\    "download_stats"
+            \\    "download_stats",
+            \\    "comments",
+            \\    "oauth"
             \\  ]
             \\}}
         , .{
             registry_name,
             registry_url,
             api_version,
+            ZEPPLIN_VERSION,
             if (std.mem.eql(u8, allow_public_publish, "1")) "true" else "false",
         });
         defer self.allocator.free(json_response);
@@ -2269,13 +2299,21 @@ pub const Server = struct {
         defer self.allocator.free(auth_token.token);
         
         // Get user info from database
-        // For now, we'll create a dummy username based on user_id
+        // For now, we'll create dummy data based on user_id
         // In a real implementation, you'd look this up in the database
         const username = try std.fmt.allocPrint(self.allocator, "user_{}", .{auth_token.user_id});
+        const email = try std.fmt.allocPrint(self.allocator, "user_{}@example.com", .{auth_token.user_id});
+        const display_name = try std.fmt.allocPrint(self.allocator, "User {}", .{auth_token.user_id});
+        const avatar_url = try self.allocator.dupe(u8, "");
+        const provider = try self.allocator.dupe(u8, "local");
         
         return AuthenticatedUser{
             .username = username,
             .user_id = auth_token.user_id,
+            .email = email,
+            .display_name = display_name,
+            .avatar_url = avatar_url,
+            .provider = provider,
         };
     }
     
@@ -2313,16 +2351,23 @@ pub const Server = struct {
         
         const u = user.?;
         defer self.allocator.free(u.username);
+        defer self.allocator.free(u.email);
+        defer self.allocator.free(u.display_name);
+        defer self.allocator.free(u.avatar_url);
+        defer self.allocator.free(u.provider);
         
-        // Get user details from database
-        // For now, we'll return basic info based on the token
+        // Return full user profile info
         const json_response = try std.fmt.allocPrint(self.allocator,
             \\{{
             \\  "user_id": {},
             \\  "username": "{s}",
+            \\  "email": "{s}",
+            \\  "display_name": "{s}",
+            \\  "avatar_url": "{s}",
+            \\  "provider": "{s}",
             \\  "authenticated": true
             \\}}
-        , .{ u.user_id, u.username });
+        , .{ u.user_id, u.username, u.email, u.display_name, u.avatar_url, u.provider });
         defer self.allocator.free(json_response);
         
         try self.serveJson(stream, 200, json_response);
@@ -2708,13 +2753,19 @@ pub const Server = struct {
         };
         defer self.allocator.free(auth_url);
         
+        // Generate random state parameter for CSRF protection
+        var state_bytes: [16]u8 = undefined;
+        std.crypto.random.bytes(&state_bytes);
+        const state = try std.fmt.allocPrint(self.allocator, "{s}", .{std.fmt.bytesToHex(&state_bytes, .lower)});
+        defer self.allocator.free(state);
+        
         // Redirect to Microsoft OAuth
         const redirect_response = try std.fmt.allocPrint(self.allocator,
             "HTTP/1.1 302 Found\r\n" ++
-            "Location: {s}\r\n" ++
-            "Set-Cookie: oauth_state=microsoft; HttpOnly; Path=/; Max-Age=600\r\n" ++
+            "Location: {s}&state={s}\r\n" ++
+            "Set-Cookie: oauth_state={s}; HttpOnly; Path=/; Max-Age=600\r\n" ++
             "\r\n",
-            .{auth_url}
+            .{ auth_url, state, state }
         );
         defer self.allocator.free(redirect_response);
         
@@ -2722,7 +2773,6 @@ pub const Server = struct {
     }
     
     fn handleMicrosoftCallback(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8) !void {
-        _ = request;
         
         // Parse the authorization code from query parameters
         const query_start = std.mem.indexOf(u8, path, "?") orelse {
@@ -2755,9 +2805,30 @@ pub const Server = struct {
             return self.serveJsonError(stream, 400, "Missing authorization code");
         };
         
-        // TODO: Validate state parameter for CSRF protection
-        if (state) |_| {
-            // State validation would go here
+        // Validate state parameter for CSRF protection
+        if (state) |provided_state| {
+            // Extract state from cookie
+            const cookie_start = std.mem.indexOf(u8, request, "Cookie: ") orelse {
+                return self.serveJsonError(stream, 400, "Missing session cookie");
+            };
+            const cookie_line_end = std.mem.indexOf(u8, request[cookie_start..], "\r\n") orelse {
+                return self.serveJsonError(stream, 400, "Invalid cookie header");
+            };
+            const cookie_line = request[cookie_start + 8..cookie_start + cookie_line_end];
+            
+            // Look for oauth_state cookie
+            const state_cookie_start = std.mem.indexOf(u8, cookie_line, "oauth_state=") orelse {
+                return self.serveJsonError(stream, 400, "Missing OAuth state cookie");
+            };
+            const state_value_start = state_cookie_start + 12;
+            const state_value_end = std.mem.indexOf(u8, cookie_line[state_value_start..], ";") orelse cookie_line.len - state_value_start;
+            const expected_state = cookie_line[state_value_start..state_value_start + state_value_end];
+            
+            if (!std.mem.eql(u8, provided_state, expected_state)) {
+                return self.serveJsonError(stream, 400, "Invalid OAuth state parameter - possible CSRF attack");
+            }
+        } else {
+            return self.serveJsonError(stream, 400, "Missing OAuth state parameter");
         }
         
         // Initialize unified auth system
@@ -2791,11 +2862,22 @@ pub const Server = struct {
             \\<script>
             \\localStorage.setItem('zepplin_token', '{s}');
             \\localStorage.setItem('zepplin_username', '{s}');
+            \\localStorage.setItem('zepplin_display_name', '{s}');
+            \\localStorage.setItem('zepplin_avatar_url', '{s}');
+            \\localStorage.setItem('zepplin_email', '{s}');
             \\setTimeout(() => window.location.href = '/', 2000);
             \\</script>
             \\</body></html>
         ,
-            .{ jwt_token, user.display_name orelse user.username, jwt_token, user.username }
+            .{ 
+                jwt_token, 
+                user.display_name orelse user.username, 
+                jwt_token, 
+                user.username,
+                user.display_name orelse user.username,
+                user.avatar_url orelse "",
+                user.email
+            }
         );
         defer self.allocator.free(success_response);
         
@@ -2815,13 +2897,19 @@ pub const Server = struct {
         };
         defer self.allocator.free(auth_url);
         
+        // Generate random state parameter for CSRF protection
+        var state_bytes: [16]u8 = undefined;
+        std.crypto.random.bytes(&state_bytes);
+        const state = try std.fmt.allocPrint(self.allocator, "{s}", .{std.fmt.bytesToHex(&state_bytes, .lower)});
+        defer self.allocator.free(state);
+        
         // Redirect to GitHub OAuth
         const redirect_response = try std.fmt.allocPrint(self.allocator,
             "HTTP/1.1 302 Found\r\n" ++
-            "Location: {s}\r\n" ++
-            "Set-Cookie: oauth_state=github; HttpOnly; Path=/; Max-Age=600\r\n" ++
+            "Location: {s}&state={s}\r\n" ++
+            "Set-Cookie: oauth_state={s}; HttpOnly; Path=/; Max-Age=600\r\n" ++
             "\r\n",
-            .{auth_url}
+            .{ auth_url, state, state }
         );
         defer self.allocator.free(redirect_response);
         
@@ -2829,7 +2917,6 @@ pub const Server = struct {
     }
     
     fn handleGitHubCallback(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8) !void {
-        _ = request;
         
         // Parse the authorization code from query parameters
         const query_start = std.mem.indexOf(u8, path, "?") orelse {
@@ -2862,9 +2949,30 @@ pub const Server = struct {
             return self.serveJsonError(stream, 400, "Missing authorization code");
         };
         
-        // TODO: Validate state parameter for CSRF protection
-        if (state) |_| {
-            // State validation would go here
+        // Validate state parameter for CSRF protection
+        if (state) |provided_state| {
+            // Extract state from cookie
+            const cookie_start = std.mem.indexOf(u8, request, "Cookie: ") orelse {
+                return self.serveJsonError(stream, 400, "Missing session cookie");
+            };
+            const cookie_line_end = std.mem.indexOf(u8, request[cookie_start..], "\r\n") orelse {
+                return self.serveJsonError(stream, 400, "Invalid cookie header");
+            };
+            const cookie_line = request[cookie_start + 8..cookie_start + cookie_line_end];
+            
+            // Look for oauth_state cookie
+            const state_cookie_start = std.mem.indexOf(u8, cookie_line, "oauth_state=") orelse {
+                return self.serveJsonError(stream, 400, "Missing OAuth state cookie");
+            };
+            const state_value_start = state_cookie_start + 12;
+            const state_value_end = std.mem.indexOf(u8, cookie_line[state_value_start..], ";") orelse cookie_line.len - state_value_start;
+            const expected_state = cookie_line[state_value_start..state_value_start + state_value_end];
+            
+            if (!std.mem.eql(u8, provided_state, expected_state)) {
+                return self.serveJsonError(stream, 400, "Invalid OAuth state parameter - possible CSRF attack");
+            }
+        } else {
+            return self.serveJsonError(stream, 400, "Missing OAuth state parameter");
         }
         
         // Initialize unified auth system
@@ -2898,14 +3006,321 @@ pub const Server = struct {
             \\<script>
             \\localStorage.setItem('zepplin_token', '{s}');
             \\localStorage.setItem('zepplin_username', '{s}');
+            \\localStorage.setItem('zepplin_display_name', '{s}');
+            \\localStorage.setItem('zepplin_avatar_url', '{s}');
+            \\localStorage.setItem('zepplin_email', '{s}');
             \\setTimeout(() => window.location.href = '/', 2000);
             \\</script>
             \\</body></html>
         ,
-            .{ jwt_token, user.display_name orelse user.username, jwt_token, user.username }
+            .{ 
+                jwt_token, 
+                user.display_name orelse user.username, 
+                jwt_token, 
+                user.username,
+                user.display_name orelse user.username,
+                user.avatar_url orelse "",
+                user.email
+            }
         );
         defer self.allocator.free(success_response);
         
         _ = try stream.write(success_response);
+    }
+    
+    // Comment API handlers
+    fn handleCommentsApiV1(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+        _ = request_allocator;
+        
+        // Parse HTTP method
+        const method_end = std.mem.indexOf(u8, request, " ") orelse return self.serveJsonError(stream, 400, "Invalid request");
+        const method = request[0..method_end];
+        
+        if (std.mem.eql(u8, method, "GET")) {
+            // GET /api/v1/comments/{owner}/{repo}
+            const path_parts = std.mem.splitSequence(u8, path[18..], "/"); // Skip "/api/v1/comments/"
+            var parts_iter = path_parts;
+            
+            const owner = parts_iter.next() orelse return self.serveJsonError(stream, 400, "Missing owner");
+            const repo = parts_iter.next() orelse return self.serveJsonError(stream, 400, "Missing repo");
+            
+            const package_id = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ owner, repo });
+            defer self.allocator.free(package_id);
+            
+            const comments = self.database.getCommentsForPackage(package_id) catch |err| {
+                std.debug.print("Error getting comments: {}\n", .{err});
+                return self.serveJsonError(stream, 500, "Failed to get comments");
+            };
+            defer self.allocator.free(comments);
+            
+            // Convert comments to JSON using simple string formatting
+            var json_parts = std.array_list.AlignedManaged([]const u8, null).init(self.allocator);
+            defer json_parts.deinit();
+            
+            try json_parts.append("{\"comments\":[");
+            
+            for (comments, 0..) |comment, i| {
+                if (i > 0) try json_parts.append(",");
+                
+                const comment_json = try std.fmt.allocPrint(self.allocator,
+                    "{{\"id\":{},\"package_id\":\"{s}\",\"user_id\":{},\"username\":\"{s}\",\"display_name\":\"{s}\",\"content\":\"{s}\",\"created_at\":{},\"updated_at\":{},\"parent_id\":{}}}",
+                    .{
+                        comment.id,
+                        comment.package_id,
+                        comment.user_id,
+                        comment.username,
+                        comment.display_name orelse "",
+                        comment.content,
+                        comment.created_at,
+                        comment.updated_at,
+                        comment.parent_id orelse 0
+                    });
+                defer self.allocator.free(comment_json);
+                
+                try json_parts.append(try self.allocator.dupe(u8, comment_json));
+            }
+            
+            try json_parts.append("]}");
+            
+            const json_response = try std.mem.join(self.allocator, "", json_parts.items);
+            defer self.allocator.free(json_response);
+            
+            // Free individual parts (skip the first and last static strings)
+            for (json_parts.items, 0..) |part, i| {
+                // Free allocated comment JSON strings, but not the static parts
+                if (i > 0 and i < json_parts.items.len - 1 and !std.mem.eql(u8, part, ",")) {
+                    self.allocator.free(part);
+                }
+            }
+            
+            try self.serveJson(stream, 200, json_response);
+            
+        } else if (std.mem.eql(u8, method, "POST")) {
+            // POST /api/v1/comments/{owner}/{repo}
+            const user = try self.requireAuth(stream, request);
+            if (user == null) return;
+            
+            const u = user.?;
+            defer self.allocator.free(u.username);
+            defer self.allocator.free(u.email);
+            defer self.allocator.free(u.display_name);
+            defer self.allocator.free(u.avatar_url);
+            defer self.allocator.free(u.provider);
+            
+            const path_parts = std.mem.splitSequence(u8, path[18..], "/"); // Skip "/api/v1/comments/"
+            var parts_iter = path_parts;
+            
+            const owner = parts_iter.next() orelse return self.serveJsonError(stream, 400, "Missing owner");
+            const repo = parts_iter.next() orelse return self.serveJsonError(stream, 400, "Missing repo");
+            
+            // Extract JSON body from request
+            const body_start = std.mem.indexOf(u8, request, "\r\n\r\n") orelse return self.serveJsonError(stream, 400, "No request body");
+            const body = request[body_start + 4..];
+            
+            // Simple JSON parsing for content field with better error handling
+            const content_start = std.mem.indexOf(u8, body, "\"content\":\"") orelse {
+                return self.serveJsonError(stream, 400, "Missing 'content' field in request body");
+            };
+            const content_value_start = content_start + 11;
+            
+            // Look for the closing quote, handling potential escaping
+            var content_end: usize = 0;
+            var i = content_value_start;
+            while (i < body.len) {
+                if (body[i] == '"' and (i == content_value_start or body[i-1] != '\\')) {
+                    content_end = i - content_value_start;
+                    break;
+                }
+                i += 1;
+            }
+            
+            if (content_end == 0) {
+                return self.serveJsonError(stream, 400, "Malformed JSON: unterminated content string");
+            }
+            
+            const content = body[content_value_start..content_value_start + content_end];
+            
+            // Validate content
+            if (content.len == 0) {
+                return self.serveJsonError(stream, 400, "Comment content cannot be empty");
+            }
+            if (content.len > 2000) {
+                return self.serveJsonError(stream, 400, "Comment content too long (max 2000 characters)");
+            }
+            
+            // Basic sanitization - reject comments with suspicious content
+            if (std.mem.indexOf(u8, content, "<script") != null or 
+               std.mem.indexOf(u8, content, "javascript:") != null) {
+                return self.serveJsonError(stream, 400, "Comment content contains forbidden elements");
+            }
+            
+            const package_id = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ owner, repo });
+            defer self.allocator.free(package_id);
+            
+            const comment_request = types.CommentRequest{
+                .package_id = package_id,
+                .content = content,
+                .parent_id = null, // TODO: Support for replies
+            };
+            
+            const comment_id = self.database.addComment(comment_request, @intCast(u.user_id), u.username, u.display_name) catch |err| {
+                std.debug.print("Error adding comment: {}\n", .{err});
+                return self.serveJsonError(stream, 500, "Failed to add comment");
+            };
+            
+            const json_response = try std.fmt.allocPrint(self.allocator,
+                "{{\"success\":true,\"comment_id\":{},\"message\":\"Comment added successfully\"}}",
+                .{comment_id}
+            );
+            defer self.allocator.free(json_response);
+            
+            try self.serveJson(stream, 201, json_response);
+            
+        } else {
+            return self.serveJsonError(stream, 405, "Method not allowed");
+        }
+    }
+    
+    fn handlePackagePage(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+        // Parse package path: /packages/{owner}/{repo}
+        const path_after_packages = path[10..]; // Skip "/packages/"
+        var path_parts = std.mem.splitSequence(u8, path_after_packages, "/");
+        
+        const owner = path_parts.next() orelse return self.serveJsonError(stream, 400, "Missing owner");
+        const repo = path_parts.next() orelse return self.serveJsonError(stream, 400, "Missing repo");
+        
+        // For now, serve a simple HTML page - in production this would be templated
+        const package_html = try std.fmt.allocPrint(self.allocator,
+            \\<!DOCTYPE html>
+            \\<html lang="en">
+            \\<head>
+            \\    <meta charset="UTF-8">
+            \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            \\    <title>{s}/{s} - Zepplin Registry</title>
+            \\    <link rel="stylesheet" href="/css/style.css">
+            \\</head>
+            \\<body>
+            \\    <header class="header">
+            \\        <div class="container">
+            \\            <div class="header-content">
+            \\                <div class="logo">
+            \\                    <img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img">
+            \\                </div>
+            \\                <nav class="nav">
+            \\                    <a href="/" class="nav-link">Home</a>
+            \\                    <a href="/packages" class="nav-link">Browse</a>
+            \\                    <a href="/trending" class="nav-link">Trending</a>
+            \\                    <a href="/docs" class="nav-link">Docs</a>
+            \\                    <div id="auth-nav"></div>
+            \\                </nav>
+            \\            </div>
+            \\        </div>
+            \\    </header>
+            \\    <div class="container" style="margin-top: 2rem;">
+            \\        <h1>{s}/{s}</h1>
+            \\        <p>Package details would go here...</p>
+            \\        
+            \\        <div id="comments-section" style="margin-top: 3rem;">
+            \\            <h2>Comments</h2>
+            \\            <div id="comments-list"></div>
+            \\            <div id="comment-form" style="margin-top: 2rem; display: none;">
+            \\                <textarea id="comment-content" placeholder="Add a comment..." rows="4" style="width: 100%%; padding: 0.5rem;"></textarea>
+            \\                <br><br>
+            \\                <button id="submit-comment" style="background: var(--lightning-400); color: var(--bg-primary); padding: 0.5rem 1rem; border: none; border-radius: 0.25rem; cursor: pointer;">Post Comment</button>
+            \\            </div>
+            \\        </div>
+            \\    </div>
+            \\    
+            \\    <script src="/js/main.js"></script>
+            \\    <script>
+            \\        const packageId = '{s}/{s}';
+            \\        
+            \\        async function loadComments() {{
+            \\            try {{
+            \\                const response = await fetch(`/api/v1/comments/${{packageId}}`);
+            \\                const data = await response.json();
+            \\                const commentsList = document.getElementById('comments-list');
+            \\                
+            \\                if (data.comments && data.comments.length > 0) {{
+            \\                    commentsList.innerHTML = data.comments.map(comment => `
+            \\                        <div style="border: 1px solid var(--border-subtle); padding: 1rem; margin-bottom: 1rem; border-radius: 0.5rem;">
+            \\                            <div style="font-weight: 600; color: var(--lightning-400);">${{comment.display_name || comment.username}}</div>
+            \\                            <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+            \\                                ${{new Date(comment.created_at * 1000).toLocaleString()}}
+            \\                            </div>
+            \\                            <div>${{comment.content}}</div>
+            \\                        </div>
+            \\                    `).join('');
+            \\                }} else {{
+            \\                    commentsList.innerHTML = '<p style="color: var(--text-muted);">No comments yet. Be the first to comment!</p>';
+            \\                }}
+            \\            }} catch (error) {{
+            \\                console.error('Failed to load comments:', error);
+            \\            }}
+            \\        }}
+            \\        
+            \\        function checkAuth() {{
+            \\            const token = localStorage.getItem('zepplin_token');
+            \\            const commentForm = document.getElementById('comment-form');
+            \\            if (token) {{
+            \\                commentForm.style.display = 'block';
+            \\            }}
+            \\        }}
+            \\        
+            \\        async function submitComment() {{
+            \\            const content = document.getElementById('comment-content').value.trim();
+            \\            const token = localStorage.getItem('zepplin_token');
+            \\            
+            \\            if (!content) {{
+            \\                alert('Please enter a comment');
+            \\                return;
+            \\            }}
+            \\            
+            \\            try {{
+            \\                const response = await fetch(`/api/v1/comments/${{packageId}}`, {{
+            \\                    method: 'POST',
+            \\                    headers: {{
+            \\                        'Content-Type': 'application/json',
+            \\                        'Authorization': `Bearer ${{token}}`
+            \\                    }},
+            \\                    body: JSON.stringify({{ content }})
+            \\                }});
+            \\                
+            \\                if (response.ok) {{
+            \\                    document.getElementById('comment-content').value = '';
+            \\                    loadComments();
+            \\                }} else {{
+            \\                    const error = await response.text();
+            \\                    alert('Failed to post comment: ' + error);
+            \\                }}
+            \\            }} catch (error) {{
+            \\                console.error('Failed to submit comment:', error);
+            \\                alert('Failed to post comment');
+            \\            }}
+            \\        }}
+            \\        
+            \\        document.addEventListener('DOMContentLoaded', () => {{
+            \\            loadComments();
+            \\            checkAuth();
+            \\            
+            \\            document.getElementById('submit-comment').addEventListener('click', submitComment);
+            \\        }});
+            \\    </script>
+            \\</body>
+            \\</html>
+        , .{ owner, repo, owner, repo, owner, repo });
+        defer self.allocator.free(package_html);
+        
+        const response = try std.fmt.allocPrint(self.allocator,
+            "HTTP/1.1 200 OK\r\n" ++
+            "Content-Type: text/html\r\n" ++
+            "Content-Length: {d}\r\n" ++
+            "\r\n" ++
+            "{s}",
+            .{ package_html.len, package_html }
+        );
+        defer self.allocator.free(response);
+        
+        _ = try stream.write(response);
     }
 };
