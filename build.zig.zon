@@ -34,7 +34,7 @@
         // Pure Zig cryptographic library for package verification and security
         .shroud = .{
             .url = "https://github.com/ghostkellz/shroud/archive/main.tar.gz",
-            .hash = "shroud-1.2.4-z7C8mWsWBQCJe8snoSxxMZoyAmrTX3DQkdaNFd0SrOeO",
+            .hash = "shroud-1.2.4-z7C8mXYWBQDnbScUT0wV5HI44ceuV9BYHelv9F-82sqJ",
         },
         .zqlite = .{
             .url = "https://github.com/ghostkellz/zqlite/archive/refs/heads/main.tar.gz",

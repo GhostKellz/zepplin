@@ -76,7 +76,7 @@ class ZepplinApp {
                 total_packages: '1,247',
                 total_downloads: '45.2K',
                 active_maintainers: 89,
-                zig_version: '0.14.0'
+                zig_version: '0.16.0'
             });
         }
     }
@@ -86,7 +86,7 @@ class ZepplinApp {
             'total-packages': this.formatNumber(stats.total_packages),
             'total-downloads': this.formatNumber(stats.total_downloads),
             'active-maintainers': this.formatNumber(stats.active_maintainers),
-            'zig-version': stats.zig_version || '0.14.0'
+            'zig-version': stats.zig_version || '0.16.0'
         };
 
         Object.entries(elements).forEach(([id, value]) => {

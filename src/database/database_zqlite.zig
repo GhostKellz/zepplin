@@ -132,41 +132,41 @@ pub const Database = struct {
         var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
 
         try packages.append(types.PackageMetadata{
-            .name = "zcrypto",
+            .name = try self.allocator.dupe(u8, "zcrypto"),
             .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
-            .description = "Pure Zig cryptographic library for GhostChain",
-            .author = "GhostKellz",
-            .license = "MIT",
+            .description = try self.allocator.dupe(u8, "Pure Zig cryptographic library for GhostChain"),
+            .author = try self.allocator.dupe(u8, "GhostKellz"),
+            .license = try self.allocator.dupe(u8, "MIT"),
             .repository = "https://github.com/ghostkellz/zcrypto",
             .dependencies = &[_]types.Dependency{},
         });
 
         try packages.append(types.PackageMetadata{
-            .name = "zsig",
+            .name = try self.allocator.dupe(u8, "zsig"),
             .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
-            .description = "Digital signature library for GhostChain",
-            .author = "GhostKellz",
-            .license = "MIT",
+            .description = try self.allocator.dupe(u8, "Digital signature library for GhostChain"),
+            .author = try self.allocator.dupe(u8, "GhostKellz"),
+            .license = try self.allocator.dupe(u8, "MIT"),
             .repository = "https://github.com/ghostkellz/zsig",
             .dependencies = &[_]types.Dependency{},
         });
 
         try packages.append(types.PackageMetadata{
-            .name = "zwallet",
+            .name = try self.allocator.dupe(u8, "zwallet"),
             .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
-            .description = "Wallet library for GhostChain ecosystem",
-            .author = "GhostKellz",
-            .license = "MIT",
+            .description = try self.allocator.dupe(u8, "Wallet library for GhostChain ecosystem"),
+            .author = try self.allocator.dupe(u8, "GhostKellz"),
+            .license = try self.allocator.dupe(u8, "MIT"),
             .repository = "https://github.com/ghostkellz/zwallet",
             .dependencies = &[_]types.Dependency{},
         });
 
         try packages.append(types.PackageMetadata{
-            .name = "zqlite",
+            .name = try self.allocator.dupe(u8, "zqlite"),
             .version = types.Version{ .major = 0, .minor = 4, .patch = 0 },
-            .description = "Pure Zig SQLite alternative with cryptographic features",
-            .author = "GhostKellz",
-            .license = "MIT",
+            .description = try self.allocator.dupe(u8, "Pure Zig SQLite alternative with cryptographic features"),
+            .author = try self.allocator.dupe(u8, "GhostKellz"),
+            .license = try self.allocator.dupe(u8, "MIT"),
             .repository = "https://github.com/ghostkellz/zqlite",
             .dependencies = &[_]types.Dependency{},
         });

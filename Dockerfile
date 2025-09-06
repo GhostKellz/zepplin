@@ -27,6 +27,8 @@ COPY build.zig build.zig.zon ./
 
 # Copy source code
 COPY src/ ./src/
+COPY web/ ./web/
+COPY assets/ ./assets/
 
 # Build the application with optimizations
 RUN zig build -Doptimize=ReleaseFast
@@ -56,6 +58,10 @@ RUN mkdir -p /app/data /app/logs && \
 # Copy the compiled binary
 COPY --from=builder /app/zig-out/bin/zepplin /usr/local/bin/zepplin
 RUN chmod +x /usr/local/bin/zepplin
+
+# Copy web assets
+COPY --from=builder /app/web /app/web
+COPY --from=builder /app/assets /app/assets
 
 # Switch to non-root user
 USER zepplin

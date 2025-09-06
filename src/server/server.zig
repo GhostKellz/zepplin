@@ -2147,7 +2147,7 @@ pub const Server = struct {
             \\  "total_downloads": {},
             \\  "downloads_today": {},
             \\  "active_maintainers": 89,
-            \\  "zig_version": "0.14.0"
+            \\  "zig_version": "0.16.0"
             \\}}
         , .{ stats.total_packages, stats.total_downloads, stats.downloads_today });
         defer self.allocator.free(json_response);
