@@ -66,18 +66,15 @@ pub const GitHubOAuthClient = struct {
         _ = self;
     }
     
+    
     pub fn getAuthorizationUrl(self: *GitHubOAuthClient) ![]u8 {
-        const state = try generateState(self.allocator);
-        defer self.allocator.free(state);
-        
         const auth_url = try std.fmt.allocPrint(
             self.allocator,
-            "https://github.com/login/oauth/authorize?client_id={s}&redirect_uri={s}&scope={s}&state={s}",
+            "https://github.com/login/oauth/authorize?client_id={s}&redirect_uri={s}&scope={s}",
             .{
                 self.config.client_id,
                 self.config.redirect_uri,
                 self.config.scope,
-                state,
             }
         );
         

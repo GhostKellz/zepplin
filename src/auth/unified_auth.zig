@@ -83,6 +83,7 @@ pub const UnifiedAuthSystem = struct {
         self.allocator.free(self.jwt_secret);
     }
     
+    
     pub fn getAuthorizationUrl(self: *UnifiedAuthSystem, provider: AuthProvider) ![]u8 {
         switch (provider) {
             .microsoft => {

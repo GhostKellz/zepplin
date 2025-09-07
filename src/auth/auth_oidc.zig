@@ -71,6 +71,7 @@ pub const OIDCClient = struct {
         _ = self;
     }
     
+    
     pub fn getAuthorizationUrl(self: *OIDCClient) ![]u8 {
         const state = try generateState(self.allocator);
         defer self.allocator.free(state);
