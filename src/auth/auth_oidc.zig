@@ -285,7 +285,6 @@ pub fn decodeJWT(allocator: std.mem.Allocator, token: []const u8) !JWTClaims {
 
 fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var encoded = std.array_list.AlignedManaged(u8, null).init(allocator);
-    defer encoded.deinit();
     
     for (input) |c| {
         switch (c) {

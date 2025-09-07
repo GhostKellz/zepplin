@@ -107,15 +107,31 @@ pub const UnifiedAuthSystem = struct {
             .microsoft => {
                 if (self.oidc_client) |*client| {
                     const token_response = try client.exchangeCodeForToken(code);
-                    const user_info = try client.getUserInfo(token_response.access_token);
+                    defer {
+                        self.allocator.free(token_response.access_token);
+                        self.allocator.free(token_response.token_type);
+                        self.allocator.free(token_response.scope);
+                        self.allocator.free(token_response.id_token);
+                        if (token_response.refresh_token) |rt| self.allocator.free(rt);
+                    }
                     
-                    // Create or update user based on OIDC info
+                    const user_info = try client.getUserInfo(token_response.access_token);
+                    defer {
+                        self.allocator.free(user_info.sub);
+                        if (user_info.email) |email| self.allocator.free(email);
+                        if (user_info.name) |name| self.allocator.free(name);
+                        if (user_info.given_name) |gn| self.allocator.free(gn);
+                        if (user_info.family_name) |family_name| self.allocator.free(family_name);
+                        if (user_info.preferred_username) |pu| self.allocator.free(pu);
+                    }
+                    
+                    // Create or update user based on OIDC info - duplicate strings for return
                     return UnifiedUser{
                         .id = 1, // Would be generated/fetched from database
-                        .username = user_info.preferred_username orelse user_info.email orelse "user",
-                        .email = user_info.email orelse "",
-                        .display_name = user_info.name,
-                        .avatar_url = user_info.picture,
+                        .username = try self.allocator.dupe(u8, user_info.preferred_username orelse user_info.email orelse "user"),
+                        .email = try self.allocator.dupe(u8, user_info.email orelse ""),
+                        .display_name = if (user_info.name) |name| try self.allocator.dupe(u8, name) else null,
+                        .avatar_url = if (user_info.picture) |pic| try self.allocator.dupe(u8, pic) else null,
                         .primary_provider = .microsoft,
                         .linked_accounts = &[_]LinkedAccount{},
                         .api_token = null,
@@ -128,15 +144,33 @@ pub const UnifiedAuthSystem = struct {
             .github => {
                 if (self.github_client) |*client| {
                     const token_response = try client.exchangeCodeForToken(code);
-                    const github_user = try client.getUser(token_response.access_token);
+                    defer {
+                        self.allocator.free(token_response.access_token);
+                        self.allocator.free(token_response.token_type);
+                        self.allocator.free(token_response.scope);
+                    }
                     
-                    // Create or update user based on GitHub info
+                    const github_user = try client.getUser(token_response.access_token);
+                    defer {
+                        self.allocator.free(github_user.login);
+                        if (github_user.name) |name| self.allocator.free(name);
+                        if (github_user.email) |email| self.allocator.free(email);
+                        if (github_user.avatar_url) |avatar| self.allocator.free(avatar);
+                        if (github_user.bio) |bio| self.allocator.free(bio);
+                        if (github_user.company) |company| self.allocator.free(company);
+                        if (github_user.location) |location| self.allocator.free(location);
+                        if (github_user.blog) |blog| self.allocator.free(blog);
+                        self.allocator.free(github_user.created_at);
+                        self.allocator.free(github_user.updated_at);
+                    }
+                    
+                    // Create or update user based on GitHub info - duplicate strings for return
                     return UnifiedUser{
                         .id = github_user.id,
-                        .username = github_user.login,
-                        .email = github_user.email orelse "",
-                        .display_name = github_user.name,
-                        .avatar_url = github_user.avatar_url,
+                        .username = try self.allocator.dupe(u8, github_user.login),
+                        .email = try self.allocator.dupe(u8, github_user.email orelse ""),
+                        .display_name = if (github_user.name) |name| try self.allocator.dupe(u8, name) else null,
+                        .avatar_url = if (github_user.avatar_url) |avatar| try self.allocator.dupe(u8, avatar) else null,
                         .primary_provider = .github,
                         .linked_accounts = &[_]LinkedAccount{},
                         .api_token = null,

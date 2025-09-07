@@ -2815,6 +2815,12 @@ pub const Server = struct {
         const user = auth_system.handleCallback(.microsoft, auth_code) catch {
             return self.serveJsonError(stream, 500, "Failed to exchange authorization code");
         };
+        defer {
+            self.allocator.free(user.username);
+            self.allocator.free(user.email);
+            if (user.display_name) |dn| self.allocator.free(dn);
+            if (user.avatar_url) |au| self.allocator.free(au);
+        }
         
         // Create JWT token
         const jwt_token = auth_system.createJWT(user) catch {
@@ -2966,6 +2972,12 @@ pub const Server = struct {
         const user = auth_system.handleCallback(.github, auth_code) catch {
             return self.serveJsonError(stream, 500, "Failed to exchange authorization code");
         };
+        defer {
+            self.allocator.free(user.username);
+            self.allocator.free(user.email);
+            if (user.display_name) |dn| self.allocator.free(dn);
+            if (user.avatar_url) |au| self.allocator.free(au);
+        }
         
         // Create JWT token
         const jwt_token = auth_system.createJWT(user) catch {
