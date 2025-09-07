@@ -22,7 +22,7 @@ pub const OIDCConfig = struct {
         const client_secret = std.process.getEnvVarOwned(allocator, "AZURE_CLIENT_SECRET") catch return error.MissingClientSecret;
         
         // Support both localhost and production URLs
-        const redirect_base = std.process.getEnvVarOwned(allocator, "REDIRECT_BASE_URL") catch "http://localhost:8080";
+        const redirect_base = std.process.getEnvVarOwned(allocator, "REDIRECT_BASE_URL") catch "http://localhost:8888";
         
         return OIDCConfig{
             .provider = .microsoft,
@@ -99,34 +99,109 @@ pub const OIDCClient = struct {
     }
     
     pub fn exchangeCodeForToken(self: *OIDCClient, code: []const u8) !OIDCTokenResponse {
-        _ = self;
-        _ = code;
-        // This would make an HTTP POST request to the token endpoint
-        // For now, return a mock response
+        var client = std.http.Client{ .allocator = self.allocator };
+        defer client.deinit();
+        
+        // Build token endpoint URL
+        const token_url = try std.fmt.allocPrint(self.allocator, "{s}/oauth2/v2.0/token", .{self.config.authority});
+        defer self.allocator.free(token_url);
+        
+        // Build request body
+        const body = try std.fmt.allocPrint(self.allocator,
+            "grant_type=authorization_code&code={s}&redirect_uri={s}&client_id={s}&client_secret={s}",
+            .{ code, self.config.redirect_uri, self.config.client_id, self.config.client_secret }
+        );
+        defer self.allocator.free(body);
+        
+        const uri = try std.Uri.parse(token_url);
+        
+        const headers = [_]std.http.Header{
+            .{ .name = "Content-Type", .value = "application/x-www-form-urlencoded" },
+        };
+        
+        var req = try client.request(.POST, uri, .{ .extra_headers = &headers });
+        defer req.deinit();
+        
+        req.transfer_encoding = .{ .content_length = body.len };
+        try req.sendBodyComplete(body);
+        
+        var redirect_buffer: [1024]u8 = undefined;
+        const response = try req.receiveHead(&redirect_buffer);
+        
+        if (response.head.status != .ok) {
+            std.debug.print("Token exchange failed with status: {}\n", .{response.head.status});
+            return error.TokenExchangeFailed;
+        }
+        
+        var transfer_buffer: [4096]u8 = undefined;
+        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
+        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
+        defer self.allocator.free(response_body);
+        
+        // Parse JSON response
+        const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
+        defer parsed.deinit();
+        
+        const obj = parsed.value.object;
+        
         return OIDCTokenResponse{
-            .access_token = "mock_access_token",
-            .token_type = "Bearer",
-            .expires_in = 3600,
-            .scope = "openid profile email",
-            .id_token = "mock_id_token",
-            .refresh_token = "mock_refresh_token",
+            .access_token = try self.allocator.dupe(u8, obj.get("access_token").?.string),
+            .token_type = try self.allocator.dupe(u8, obj.get("token_type").?.string),
+            .expires_in = @intCast(obj.get("expires_in").?.integer),
+            .scope = try self.allocator.dupe(u8, obj.get("scope").?.string),
+            .id_token = try self.allocator.dupe(u8, obj.get("id_token").?.string),
+            .refresh_token = if (obj.get("refresh_token")) |rt| try self.allocator.dupe(u8, rt.string) else null,
         };
     }
     
     pub fn getUserInfo(self: *OIDCClient, access_token: []const u8) !OIDCUserInfo {
-        _ = self;
-        _ = access_token;
-        // This would make an HTTP GET request to the userinfo endpoint
-        // For now, return a mock response
+        var client = std.http.Client{ .allocator = self.allocator };
+        defer client.deinit();
+        
+        // Use Microsoft Graph API to get user info
+        const userinfo_url = "https://graph.microsoft.com/v1.0/me";
+        const uri = try std.Uri.parse(userinfo_url);
+        
+        const auth_header = try std.fmt.allocPrint(self.allocator, "Bearer {s}", .{access_token});
+        defer self.allocator.free(auth_header);
+        
+        const headers = [_]std.http.Header{
+            .{ .name = "Authorization", .value = auth_header },
+        };
+        
+        var req = try client.request(.GET, uri, .{ .extra_headers = &headers });
+        defer req.deinit();
+        
+        try req.sendBodiless();
+        
+        var redirect_buffer: [1024]u8 = undefined;
+        const response = try req.receiveHead(&redirect_buffer);
+        
+        if (response.head.status != .ok) {
+            std.debug.print("User info request failed with status: {}\n", .{response.head.status});
+            return error.UserInfoFailed;
+        }
+        
+        var transfer_buffer: [4096]u8 = undefined;
+        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
+        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
+        defer self.allocator.free(response_body);
+        
+        // Parse JSON response from Microsoft Graph
+        const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
+        defer parsed.deinit();
+        
+        const obj = parsed.value.object;
+        
         return OIDCUserInfo{
-            .sub = "1234567890",
-            .email = "user@example.com",
-            .email_verified = true,
-            .name = "John Doe",
-            .given_name = "John",
-            .family_name = "Doe",
-            .picture = null,
-            .preferred_username = "johndoe",
+            .sub = try self.allocator.dupe(u8, obj.get("id").?.string),
+            .email = if (obj.get("mail")) |mail| try self.allocator.dupe(u8, mail.string) else if (obj.get("userPrincipalName")) |upn| try self.allocator.dupe(u8, upn.string) else null,
+            .email_verified = true,  // Microsoft accounts are verified
+            .name = if (obj.get("displayName")) |name| try self.allocator.dupe(u8, name.string) else null,
+            .given_name = if (obj.get("givenName")) |gn| try self.allocator.dupe(u8, gn.string) else null,
+            .family_name = if (obj.get("surname")) |surname| try self.allocator.dupe(u8, surname.string) else null,
+            .picture = null,  // Would need additional API call for photo
+            .preferred_username = if (obj.get("userPrincipalName")) |upn| try self.allocator.dupe(u8, upn.string) else null,
         };
     }
     

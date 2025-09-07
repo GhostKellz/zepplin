@@ -10,7 +10,7 @@ pub const GitHubOAuthConfig = struct {
     pub fn fromEnv(allocator: std.mem.Allocator) !GitHubOAuthConfig {
         const client_id = std.process.getEnvVarOwned(allocator, "GITHUB_CLIENT_ID") catch return error.MissingClientId;
         const client_secret = std.process.getEnvVarOwned(allocator, "GITHUB_CLIENT_SECRET") catch return error.MissingClientSecret;
-        const redirect_base = std.process.getEnvVarOwned(allocator, "REDIRECT_BASE_URL") catch "http://localhost:8080";
+        const redirect_base = std.process.getEnvVarOwned(allocator, "REDIRECT_BASE_URL") catch "http://localhost:8888";
         
         return GitHubOAuthConfig{
             .client_id = try allocator.dupe(u8, client_id),
@@ -82,37 +82,112 @@ pub const GitHubOAuthClient = struct {
     }
     
     pub fn exchangeCodeForToken(self: *GitHubOAuthClient, code: []const u8) !GitHubTokenResponse {
-        _ = self;
-        _ = code;
-        // This would make an HTTP POST request to https://github.com/login/oauth/access_token
-        // For now, return a mock response
+        var client = std.http.Client{ .allocator = self.allocator };
+        defer client.deinit();
+        
+        // Build request body for GitHub OAuth
+        const body = try std.fmt.allocPrint(self.allocator,
+            "client_id={s}&client_secret={s}&code={s}&redirect_uri={s}",
+            .{ self.config.client_id, self.config.client_secret, code, self.config.redirect_uri }
+        );
+        defer self.allocator.free(body);
+        
+        const token_url = "https://github.com/login/oauth/access_token";
+        const uri = try std.Uri.parse(token_url);
+        
+        const headers = [_]std.http.Header{
+            .{ .name = "Content-Type", .value = "application/x-www-form-urlencoded" },
+            .{ .name = "Accept", .value = "application/json" }, // Request JSON instead of URL-encoded
+            .{ .name = "User-Agent", .value = "Zepplin-Registry" },
+        };
+        
+        var req = try client.request(.POST, uri, .{ .extra_headers = &headers });
+        defer req.deinit();
+        
+        req.transfer_encoding = .{ .content_length = body.len };
+        try req.sendBodyComplete(body);
+        
+        var redirect_buffer: [1024]u8 = undefined;
+        const response = try req.receiveHead(&redirect_buffer);
+        
+        if (response.head.status != .ok) {
+            std.debug.print("GitHub token exchange failed with status: {}\\n", .{response.head.status});
+            return error.TokenExchangeFailed;
+        }
+        
+        var transfer_buffer: [4096]u8 = undefined;
+        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
+        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
+        defer self.allocator.free(response_body);
+        
+        // Parse JSON response
+        const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
+        defer parsed.deinit();
+        
+        const obj = parsed.value.object;
+        
         return GitHubTokenResponse{
-            .access_token = "gho_mocktoken123456789",
-            .token_type = "bearer",
-            .scope = "read:user,user:email",
+            .access_token = try self.allocator.dupe(u8, obj.get("access_token").?.string),
+            .token_type = try self.allocator.dupe(u8, obj.get("token_type").?.string),
+            .scope = try self.allocator.dupe(u8, obj.get("scope").?.string),
         };
     }
     
     pub fn getUser(self: *GitHubOAuthClient, access_token: []const u8) !GitHubUser {
-        _ = self;
-        _ = access_token;
-        // This would make an HTTP GET request to https://api.github.com/user
-        // For now, return a mock response
+        var client = std.http.Client{ .allocator = self.allocator };
+        defer client.deinit();
+        
+        const user_url = "https://api.github.com/user";
+        const uri = try std.Uri.parse(user_url);
+        
+        const auth_header = try std.fmt.allocPrint(self.allocator, "Bearer {s}", .{access_token});
+        defer self.allocator.free(auth_header);
+        
+        const headers = [_]std.http.Header{
+            .{ .name = "Authorization", .value = auth_header },
+            .{ .name = "Accept", .value = "application/vnd.github.v3+json" },
+            .{ .name = "User-Agent", .value = "Zepplin-Registry" },
+        };
+        
+        var req = try client.request(.GET, uri, .{ .extra_headers = &headers });
+        defer req.deinit();
+        
+        try req.sendBodiless();
+        
+        var redirect_buffer: [1024]u8 = undefined;
+        const response = try req.receiveHead(&redirect_buffer);
+        
+        if (response.head.status != .ok) {
+            std.debug.print("GitHub user request failed with status: {}\\n", .{response.head.status});
+            return error.UserInfoFailed;
+        }
+        
+        var transfer_buffer: [4096]u8 = undefined;
+        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
+        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
+        defer self.allocator.free(response_body);
+        
+        // Parse JSON response from GitHub API
+        const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
+        defer parsed.deinit();
+        
+        const obj = parsed.value.object;
+        
         return GitHubUser{
-            .id = 1234567,
-            .login = "johndoe",
-            .name = "John Doe",
-            .email = "john@example.com",
-            .avatar_url = "https://avatars.githubusercontent.com/u/1234567",
-            .bio = "Software Developer",
-            .company = "Example Corp",
-            .location = "San Francisco, CA",
-            .blog = "https://johndoe.dev",
-            .public_repos = 42,
-            .followers = 100,
-            .following = 50,
-            .created_at = "2020-01-01T00:00:00Z",
-            .updated_at = "2024-01-01T00:00:00Z",
+            .id = @intCast(obj.get("id").?.integer),
+            .login = try self.allocator.dupe(u8, obj.get("login").?.string),
+            .name = if (obj.get("name")) |name| if (name != .null) try self.allocator.dupe(u8, name.string) else null else null,
+            .email = if (obj.get("email")) |email| if (email != .null) try self.allocator.dupe(u8, email.string) else null else null,
+            .avatar_url = if (obj.get("avatar_url")) |avatar| if (avatar != .null) try self.allocator.dupe(u8, avatar.string) else null else null,
+            .bio = if (obj.get("bio")) |bio| if (bio != .null) try self.allocator.dupe(u8, bio.string) else null else null,
+            .company = if (obj.get("company")) |company| if (company != .null) try self.allocator.dupe(u8, company.string) else null else null,
+            .location = if (obj.get("location")) |location| if (location != .null) try self.allocator.dupe(u8, location.string) else null else null,
+            .blog = if (obj.get("blog")) |blog| if (blog != .null) try self.allocator.dupe(u8, blog.string) else null else null,
+            .public_repos = @intCast(obj.get("public_repos").?.integer),
+            .followers = @intCast(obj.get("followers").?.integer),
+            .following = @intCast(obj.get("following").?.integer),
+            .created_at = try self.allocator.dupe(u8, obj.get("created_at").?.string),
+            .updated_at = try self.allocator.dupe(u8, obj.get("updated_at").?.string),
         };
     }
     
