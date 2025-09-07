@@ -79,6 +79,13 @@ pub const OIDCClient = struct {
         const nonce = try generateNonce(self.allocator);
         defer self.allocator.free(nonce);
         
+        // URL encode the parameters that need encoding
+        const encoded_redirect_uri = try urlEncode(self.allocator, self.config.redirect_uri);
+        defer self.allocator.free(encoded_redirect_uri);
+        
+        const encoded_scope = try urlEncode(self.allocator, self.config.scope);
+        defer self.allocator.free(encoded_scope);
+        
         const auth_url = switch (self.config.provider) {
             .microsoft => try std.fmt.allocPrint(
                 self.allocator,
@@ -86,8 +93,8 @@ pub const OIDCClient = struct {
                 .{
                     self.config.authority,
                     self.config.client_id,
-                    self.config.redirect_uri,
-                    self.config.scope,
+                    encoded_redirect_uri,
+                    encoded_scope,
                     state,
                     nonce,
                 }
@@ -274,4 +281,28 @@ pub fn decodeJWT(allocator: std.mem.Allocator, token: []const u8) !JWTClaims {
         .email = "user@example.com",
         .name = "John Doe",
     };
+}
+
+fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var encoded = std.array_list.AlignedManaged(u8, null).init(allocator);
+    defer encoded.deinit();
+    
+    for (input) |c| {
+        switch (c) {
+            'A'...'Z', 'a'...'z', '0'...'9', '-', '_', '.', '~' => {
+                try encoded.append(c);
+            },
+            ' ' => {
+                try encoded.append('+');
+            },
+            else => {
+                const hex_chars = "0123456789ABCDEF";
+                try encoded.append('%');
+                try encoded.append(hex_chars[(c >> 4) & 0xF]);
+                try encoded.append(hex_chars[c & 0xF]);
+            },
+        }
+    }
+    
+    return encoded.toOwnedSlice();
 }
