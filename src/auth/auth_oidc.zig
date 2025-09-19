@@ -106,12 +106,14 @@ pub const OIDCClient = struct {
     }
     
     pub fn exchangeCodeForToken(self: *OIDCClient, code: []const u8) !OIDCTokenResponse {
+        std.debug.print("🔄 Starting Microsoft token exchange...\n", .{});
         var client = std.http.Client{ .allocator = self.allocator };
         defer client.deinit();
         
         // Build token endpoint URL
         const token_url = try std.fmt.allocPrint(self.allocator, "{s}/oauth2/v2.0/token", .{self.config.authority});
         defer self.allocator.free(token_url);
+        std.debug.print("🌐 Token URL: {s}\n", .{token_url});
         
         // Build request body
         const body = try std.fmt.allocPrint(self.allocator,
@@ -126,17 +128,20 @@ pub const OIDCClient = struct {
             .{ .name = "Content-Type", .value = "application/x-www-form-urlencoded" },
         };
         
+        std.debug.print("📨 Making POST request to Microsoft token endpoint...\n", .{});
         var req = try client.request(.POST, uri, .{ .extra_headers = &headers });
         defer req.deinit();
         
         req.transfer_encoding = .{ .content_length = body.len };
         try req.sendBodyComplete(body);
+        std.debug.print("📤 Request sent, waiting for response...\n", .{});
         
         var redirect_buffer: [1024]u8 = undefined;
         const response = try req.receiveHead(&redirect_buffer);
+        std.debug.print("📥 Response status: {}\n", .{response.head.status});
         
         if (response.head.status != .ok) {
-            std.debug.print("Token exchange failed with status: {}\n", .{response.head.status});
+            std.debug.print("❌ Token exchange failed with status: {}\n", .{response.head.status});
             return error.TokenExchangeFailed;
         }
         
@@ -146,11 +151,14 @@ pub const OIDCClient = struct {
         defer self.allocator.free(response_body);
         
         // Parse JSON response
+        std.debug.print("📄 Parsing Microsoft token response...\n", .{});
+        std.debug.print("📄 Response body: {s}\n", .{response_body});
         const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
         defer parsed.deinit();
         
         const obj = parsed.value.object;
         
+        std.debug.print("✅ Microsoft token exchange successful\n", .{});
         return OIDCTokenResponse{
             .access_token = try self.allocator.dupe(u8, obj.get("access_token").?.string),
             .token_type = try self.allocator.dupe(u8, obj.get("token_type").?.string),

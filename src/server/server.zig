@@ -2812,9 +2812,12 @@ pub const Server = struct {
         defer auth_system.deinit();
         
         // Exchange code for user info
-        const user = auth_system.handleCallback(.microsoft, auth_code) catch {
+        std.debug.print("🔄 Exchanging Microsoft auth code for user info...\n", .{});
+        const user = auth_system.handleCallback(.microsoft, auth_code) catch |err| {
+            std.debug.print("❌ Microsoft auth failed: {}\n", .{err});
             return self.serveJsonError(stream, 500, "Failed to exchange authorization code");
         };
+        std.debug.print("✅ Microsoft user authenticated: {s}\n", .{user.username});
         defer {
             self.allocator.free(user.username);
             self.allocator.free(user.email);

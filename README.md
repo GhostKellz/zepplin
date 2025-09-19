@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo/zepplin-logo.png" alt="Zepplin Logo" width="200">
+</p>
+
 # ⚡ Zepplin
 
 > A lightweight, blazing-fast package manager and self-hosted registry for the Zig ecosystem.
