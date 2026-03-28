@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
 
 pub const GitHubOAuthConfig = struct {
@@ -7,11 +8,11 @@ pub const GitHubOAuthConfig = struct {
     redirect_uri: []const u8,
     scope: []const u8,
     
-    pub fn fromEnv(allocator: std.mem.Allocator) !GitHubOAuthConfig {
-        const client_id = std.process.getEnvVarOwned(allocator, "GITHUB_CLIENT_ID") catch return error.MissingClientId;
-        const client_secret = std.process.getEnvVarOwned(allocator, "GITHUB_CLIENT_SECRET") catch return error.MissingClientSecret;
-        const redirect_base = std.process.getEnvVarOwned(allocator, "REDIRECT_BASE_URL") catch "http://localhost:8888";
-        
+    pub fn fromEnv(allocator: std.mem.Allocator, environ_map: *std.process.Environ.Map) !GitHubOAuthConfig {
+        const client_id = environ_map.get("GITHUB_CLIENT_ID") orelse return error.MissingClientId;
+        const client_secret = environ_map.get("GITHUB_CLIENT_SECRET") orelse return error.MissingClientSecret;
+        const redirect_base = environ_map.get("REDIRECT_BASE_URL") orelse "http://localhost:8888";
+
         return GitHubOAuthConfig{
             .client_id = try allocator.dupe(u8, client_id),
             .client_secret = try allocator.dupe(u8, client_secret),
@@ -53,11 +54,13 @@ pub const GitHubEmail = struct {
 
 pub const GitHubOAuthClient = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     config: GitHubOAuthConfig,
-    
-    pub fn init(allocator: std.mem.Allocator, config: GitHubOAuthConfig) GitHubOAuthClient {
+
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, config: GitHubOAuthConfig) GitHubOAuthClient {
         return .{
             .allocator = allocator,
+            .io = io,
             .config = config,
         };
     }
@@ -89,7 +92,7 @@ pub const GitHubOAuthClient = struct {
     }
     
     pub fn exchangeCodeForToken(self: *GitHubOAuthClient, code: []const u8) !GitHubTokenResponse {
-        var client = std.http.Client{ .allocator = self.allocator };
+        var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
         
         // Build request body for GitHub OAuth
@@ -141,7 +144,7 @@ pub const GitHubOAuthClient = struct {
     }
     
     pub fn getUser(self: *GitHubOAuthClient, access_token: []const u8) !GitHubUser {
-        var client = std.http.Client{ .allocator = self.allocator };
+        var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
         
         const user_url = "https://api.github.com/user";
@@ -229,7 +232,7 @@ pub const GitHubOrganization = struct {
 
 fn generateState(allocator: std.mem.Allocator) ![]u8 {
     var random_bytes: [16]u8 = undefined;
-    std.crypto.random.bytes(&random_bytes);
+    compat.cryptoRandomBytes(&random_bytes);
     
     var encoded: [24]u8 = undefined; // Base64 of 16 bytes is ~22 chars
     _ = std.base64.url_safe_no_pad.Encoder.encode(&encoded, &random_bytes);
@@ -269,47 +272,47 @@ pub fn parseAccessTokenResponse(allocator: std.mem.Allocator, response: []const 
 }
 
 fn urlDecode(allocator: std.mem.Allocator, encoded: []const u8) ![]u8 {
-    var decoded = std.array_list.AlignedManaged(u8, null).init(allocator);
-    defer decoded.deinit();
-    
+    var decoded: std.ArrayList(u8) = .empty;
+    defer decoded.deinit(allocator);
+
     var i: usize = 0;
     while (i < encoded.len) {
         if (encoded[i] == '%' and i + 2 < encoded.len) {
-            const hex = encoded[i + 1..i + 3];
+            const hex = encoded[i + 1 .. i + 3];
             const byte = try std.fmt.parseInt(u8, hex, 16);
-            try decoded.append(byte);
+            try decoded.append(allocator, byte);
             i += 3;
         } else if (encoded[i] == '+') {
-            try decoded.append(' ');
+            try decoded.append(allocator, ' ');
             i += 1;
         } else {
-            try decoded.append(encoded[i]);
+            try decoded.append(allocator, encoded[i]);
             i += 1;
         }
     }
-    
-    return decoded.toOwnedSlice();
+
+    return decoded.toOwnedSlice(allocator);
 }
 
 fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var encoded = std.array_list.AlignedManaged(u8, null).init(allocator);
-    
+    var encoded: std.ArrayList(u8) = .empty;
+
     for (input) |c| {
         switch (c) {
             'A'...'Z', 'a'...'z', '0'...'9', '-', '_', '.', '~' => {
-                try encoded.append(c);
+                try encoded.append(allocator, c);
             },
             ' ' => {
-                try encoded.append('+');
+                try encoded.append(allocator, '+');
             },
             else => {
                 const hex_chars = "0123456789ABCDEF";
-                try encoded.append('%');
-                try encoded.append(hex_chars[(c >> 4) & 0xF]);
-                try encoded.append(hex_chars[c & 0xF]);
+                try encoded.append(allocator, '%');
+                try encoded.append(allocator, hex_chars[(c >> 4) & 0xF]);
+                try encoded.append(allocator, hex_chars[c & 0xF]);
             },
         }
     }
-    
-    return encoded.toOwnedSlice();
+
+    return encoded.toOwnedSlice(allocator);
 }

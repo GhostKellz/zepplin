@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLI Reference - Zepplin Registry</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .docs-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .docs-header {
+            margin-bottom: 3rem;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 2rem;
+        }
+        .docs-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--lightning-400);
+            margin-bottom: 0.5rem;
+        }
+        .docs-subtitle {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+        }
+        .command-section {
+            margin-bottom: 2.5rem;
+        }
+        .command-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .command-name {
+            font-family: 'Fira Code', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--lightning-400);
+        }
+        .command-tag {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+        }
+        .command-description {
+            color: var(--text-secondary);
+            line-height: 1.7;
+            margin-bottom: 1rem;
+        }
+        .command-usage {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.5rem;
+            padding: 1rem 1.25rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+        .command-options {
+            margin-top: 1rem;
+        }
+        .command-options h4 {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 0.75rem;
+        }
+        .option-row {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 1rem;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .option-row:last-child { border-bottom: none; }
+        .option-name {
+            font-family: 'Fira Code', monospace;
+            color: var(--lightning-400);
+            font-size: 0.9rem;
+        }
+        .option-desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .example-block {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.5rem;
+            padding: 1rem 1.25rem;
+            margin-top: 1rem;
+        }
+        .example-block h4 {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+        .example-block pre {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            margin: 0;
+        }
+        .nav-breadcrumb {
+            margin-bottom: 2rem;
+        }
+        .nav-breadcrumb a {
+            color: var(--text-muted);
+            text-decoration: none;
+        }
+        .nav-breadcrumb a:hover {
+            color: var(--lightning-400);
+        }
+        .nav-breadcrumb span {
+            color: var(--text-muted);
+            margin: 0 0.5rem;
+        }
+        .toc {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .toc h3 {
+            font-size: 1rem;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+        }
+        .toc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 0.5rem;
+        }
+        .toc a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+        }
+        .toc a:hover {
+            color: var(--lightning-400);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-logo">
+                <img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img">
+                <span>Zepplin</span>
+            </a>
+            <div class="nav-links">
+                <a href="/packages" class="nav-link">Packages</a>
+                <a href="/docs" class="nav-link active">Docs</a>
+                <a href="/publish" class="nav-link">Publish</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="docs-container">
+        <nav class="nav-breadcrumb">
+            <a href="/">Home</a>
+            <span>/</span>
+            <a href="/docs">Documentation</a>
+            <span>/</span>
+            <span style="color: var(--text-primary);">CLI Reference</span>
+        </nav>
+
+        <header class="docs-header">
+            <h1 class="docs-title">CLI Reference</h1>
+            <p class="docs-subtitle">Complete command-line interface documentation for Zepplin</p>
+        </header>
+
+        <nav class="toc">
+            <h3>Commands</h3>
+            <div class="toc-grid">
+                <a href="#init">init</a>
+                <a href="#add">add</a>
+                <a href="#update">update</a>
+                <a href="#build">build</a>
+                <a href="#publish">publish</a>
+                <a href="#login">login</a>
+                <a href="#discover">discover</a>
+                <a href="#browse">browse</a>
+                <a href="#trending">trending</a>
+                <a href="#help">help</a>
+            </div>
+        </nav>
+
+        <section id="init" class="command-section">
+            <div class="command-header">
+                <span class="command-name">init</span>
+                <span class="command-tag">Project Setup</span>
+            </div>
+            <p class="command-description">
+                Initialize a new Zepplin project in the current directory. Creates the configuration
+                files needed to manage dependencies.
+            </p>
+            <div class="command-usage">zepplin init</div>
+            <p class="command-description">
+                Creates <code>zepplin.toml</code> (project configuration) and <code>zepplin.lock</code>
+                (dependency lock file) in the current directory.
+            </p>
+        </section>
+
+        <section id="add" class="command-section">
+            <div class="command-header">
+                <span class="command-name">add</span>
+                <span class="command-tag">Dependencies</span>
+            </div>
+            <p class="command-description">
+                Add a package dependency to your project. The package will be resolved from the
+                configured registry and added to your project configuration.
+            </p>
+            <div class="command-usage">zepplin add &lt;package&gt; [OPTIONS]</div>
+            <div class="command-options">
+                <h4>Arguments</h4>
+                <div class="option-row">
+                    <span class="option-name">&lt;package&gt;</span>
+                    <span class="option-desc">Package name, optionally with version (e.g., "zig-clap" or "zap@0.3.0")</span>
+                </div>
+            </div>
+            <div class="command-options">
+                <h4>Options</h4>
+                <div class="option-row">
+                    <span class="option-name">--registry &lt;url&gt;</span>
+                    <span class="option-desc">Use a custom registry URL instead of the default</span>
+                </div>
+            </div>
+            <div class="example-block">
+                <h4>Examples</h4>
+                <pre>zepplin add zig-clap
+zepplin add zap@0.3.0
+zepplin add mypackage --registry https://custom-registry.com</pre>
+            </div>
+        </section>
+
+        <section id="update" class="command-section">
+            <div class="command-header">
+                <span class="command-name">update</span>
+                <span class="command-tag">Dependencies</span>
+            </div>
+            <p class="command-description">
+                Update all dependencies to their latest compatible versions according to your
+                version constraints.
+            </p>
+            <div class="command-usage">zepplin update</div>
+        </section>
+
+        <section id="build" class="command-section">
+            <div class="command-header">
+                <span class="command-name">build</span>
+                <span class="command-tag">Build</span>
+            </div>
+            <p class="command-description">
+                Build your project with all dependencies resolved. This ensures all packages are
+                downloaded and configured before running <code>zig build</code>.
+            </p>
+            <div class="command-usage">zepplin build</div>
+        </section>
+
+        <section id="publish" class="command-section">
+            <div class="command-header">
+                <span class="command-name">publish</span>
+                <span class="command-tag">Publishing</span>
+            </div>
+            <p class="command-description">
+                Publish your package to the registry. Requires authentication and a valid
+                <code>build.zig.zon</code> with package metadata.
+            </p>
+            <div class="command-usage">zepplin publish</div>
+            <p class="command-description">
+                Before publishing, ensure your <code>build.zig.zon</code> contains:
+            </p>
+            <ul style="color: var(--text-secondary); padding-left: 1.5rem; margin-bottom: 1rem;">
+                <li><code>.name</code> - Package name</li>
+                <li><code>.version</code> - Semantic version (e.g., "1.0.0")</li>
+                <li><code>.description</code> - Brief package description</li>
+                <li><code>.license</code> - License identifier (e.g., "MIT")</li>
+            </ul>
+        </section>
+
+        <section id="login" class="command-section">
+            <div class="command-header">
+                <span class="command-name">login</span>
+                <span class="command-tag">Authentication</span>
+            </div>
+            <p class="command-description">
+                Authenticate with a package registry. Required before publishing packages.
+            </p>
+            <div class="command-usage">zepplin login [registry]</div>
+            <div class="command-options">
+                <h4>Arguments</h4>
+                <div class="option-row">
+                    <span class="option-name">[registry]</span>
+                    <span class="option-desc">Registry URL (default: https://registry.zepplin.dev)</span>
+                </div>
+            </div>
+        </section>
+
+        <section id="discover" class="command-section">
+            <div class="command-header">
+                <span class="command-name">discover</span>
+                <span class="command-tag">Search</span>
+            </div>
+            <p class="command-description">
+                Search for packages across configured registries and Zigistry. Shows package
+                details including stars and description.
+            </p>
+            <div class="command-usage">zepplin discover [query]</div>
+            <div class="command-options">
+                <h4>Arguments</h4>
+                <div class="option-row">
+                    <span class="option-name">[query]</span>
+                    <span class="option-desc">Search query (searches name and description)</span>
+                </div>
+            </div>
+            <div class="example-block">
+                <h4>Examples</h4>
+                <pre>zepplin discover "http server"
+zepplin discover json
+zepplin discover</pre>
+            </div>
+        </section>
+
+        <section id="browse" class="command-section">
+            <div class="command-header">
+                <span class="command-name">browse</span>
+                <span class="command-tag">Discovery</span>
+            </div>
+            <p class="command-description">
+                Browse packages by category. Without a category, shows all available categories.
+            </p>
+            <div class="command-usage">zepplin browse [--category &lt;name&gt;]</div>
+            <div class="command-options">
+                <h4>Options</h4>
+                <div class="option-row">
+                    <span class="option-name">--category &lt;name&gt;</span>
+                    <span class="option-desc">Filter by category (e.g., "cli", "web", "gamedev")</span>
+                </div>
+            </div>
+            <div class="example-block">
+                <h4>Examples</h4>
+                <pre>zepplin browse
+zepplin browse --category=cli
+zepplin browse --category=web</pre>
+            </div>
+        </section>
+
+        <section id="trending" class="command-section">
+            <div class="command-header">
+                <span class="command-name">trending</span>
+                <span class="command-tag">Discovery</span>
+            </div>
+            <p class="command-description">
+                Show trending packages based on recent activity, downloads, and community engagement.
+            </p>
+            <div class="command-usage">zepplin trending [--category &lt;name&gt;]</div>
+            <div class="command-options">
+                <h4>Options</h4>
+                <div class="option-row">
+                    <span class="option-name">--category &lt;name&gt;</span>
+                    <span class="option-desc">Filter trending packages by category</span>
+                </div>
+            </div>
+        </section>
+
+        <section id="help" class="command-section">
+            <div class="command-header">
+                <span class="command-name">help</span>
+                <span class="command-tag">Help</span>
+            </div>
+            <p class="command-description">
+                Display help information and available commands.
+            </p>
+            <div class="command-usage">zepplin help</div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>Zepplin</h4>
+                <p>A modern package registry for the Zig ecosystem</p>
+            </div>
+            <div class="footer-section">
+                <h4>Documentation</h4>
+                <ul>
+                    <li><a href="/docs/getting-started">Getting Started</a></li>
+                    <li><a href="/docs/api">API Reference</a></li>
+                    <li><a href="/docs/cli">CLI Usage</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Community</h4>
+                <ul>
+                    <li><a href="https://github.com/ckgxrg-salt/zepplin">GitHub</a></li>
+                    <li><a href="/docs/contribute">Contributing</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>Built with Zig. Powered by Zepplin.</p>
+        </div>
+    </footer>
+</body>
+</html>

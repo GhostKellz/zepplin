@@ -47,7 +47,7 @@ pub const CliArgs = struct {
     verbose: bool = false,
 };
 
-pub fn parseArgs(args: [][:0]u8) !CliArgs {
+pub fn parseArgs(args: []const [:0]const u8) !CliArgs {
     if (args.len < 2) {
         return CliError.MissingArgument;
     }

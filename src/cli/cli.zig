@@ -3,22 +3,22 @@ const commands = @import("commands.zig");
 const types = @import("../common/types.zig");
 const zigistry = @import("../zigistry/client.zig");
 
-pub fn executeCommand(allocator: std.mem.Allocator, args: commands.CliArgs) !void {
+pub fn executeCommand(allocator: std.mem.Allocator, io: std.Io, args: commands.CliArgs) !void {
     switch (args.command) {
-        .init => try initProject(allocator),
-        .add => try addPackage(allocator, args.package_name orelse return commands.CliError.MissingArgument, args.version),
-        .update => try updatePackages(allocator),
-        .build => try buildProject(allocator),
-        .publish => try publishPackage(allocator),
-        .login => try loginToRegistry(allocator, args.registry_url),
-        .discover => try discoverPackages(allocator, args.package_name),
-        .browse => try browsePackages(allocator, args.category),
-        .trending => try showTrending(allocator, args.category),
+        .init => try initProject(allocator, io),
+        .add => try addPackage(allocator, io, args.package_name orelse return commands.CliError.MissingArgument, args.version),
+        .update => try updatePackages(allocator, io),
+        .build => try buildProject(allocator, io),
+        .publish => try publishPackage(allocator, io),
+        .login => try loginToRegistry(allocator, io, args.registry_url),
+        .discover => try discoverPackages(allocator, io, args.package_name),
+        .browse => try browsePackages(allocator, io, args.category),
+        .trending => try showTrending(allocator, io, args.category),
         .help => commands.printHelp(),
     }
 }
 
-fn initProject(_: std.mem.Allocator) !void {
+fn initProject(_: std.mem.Allocator, io: std.Io) !void {
     std.debug.print("🚀 Initializing new Zepplin project...\n", .{});
 
     // Create zepplin.toml
@@ -38,16 +38,19 @@ fn initProject(_: std.mem.Allocator) !void {
         \\
     ;
 
-    const file = std.fs.cwd().createFile("zepplin.toml", .{}) catch |err| switch (err) {
+    const file = std.Io.Dir.cwd().createFile(io, "zepplin.toml", .{}) catch |err| switch (err) {
         error.PathAlreadyExists => {
             std.debug.print("❌ zepplin.toml already exists\n", .{});
             return;
         },
         else => return err,
     };
-    defer file.close();
+    defer file.close(io);
 
-    try file.writeAll(toml_content);
+    var write_buf: [4096]u8 = undefined;
+    var writer = file.writer(io, &write_buf);
+    try writer.interface.writeAll(toml_content);
+    try writer.interface.flush();
 
     // Create zepplin.lock
     const lock_content =
@@ -62,15 +65,19 @@ fn initProject(_: std.mem.Allocator) !void {
         \\
     ;
 
-    const lock_file = try std.fs.cwd().createFile("zepplin.lock", .{});
-    defer lock_file.close();
-    try lock_file.writeAll(lock_content);
+    const lock_file = try std.Io.Dir.cwd().createFile(io, "zepplin.lock", .{});
+    defer lock_file.close(io);
+
+    var lock_write_buf: [4096]u8 = undefined;
+    var lock_writer = lock_file.writer(io, &lock_write_buf);
+    try lock_writer.interface.writeAll(lock_content);
+    try lock_writer.interface.flush();
 
     std.debug.print("✅ Created zepplin.toml and zepplin.lock\n", .{});
     std.debug.print("📦 Project initialized successfully!\n", .{});
 }
 
-fn addPackage(_: std.mem.Allocator, package_name: []const u8, version: ?[]const u8) !void {
+fn addPackage(_: std.mem.Allocator, _: std.Io, package_name: []const u8, version: ?[]const u8) !void {
     std.debug.print("📦 Adding package: {s}", .{package_name});
     if (version) |v| {
         std.debug.print("@{s}", .{v});
@@ -83,20 +90,22 @@ fn addPackage(_: std.mem.Allocator, package_name: []const u8, version: ?[]const 
     std.debug.print("✅ Package added successfully!\n", .{});
 }
 
-fn updatePackages(_: std.mem.Allocator) !void {
+fn updatePackages(_: std.mem.Allocator, _: std.Io) !void {
     std.debug.print("🔄 Updating all packages...\n", .{});
     std.debug.print("✅ All packages updated!\n", .{});
 }
 
-fn buildProject(allocator: std.mem.Allocator) !void {
+fn buildProject(_: std.mem.Allocator, io: std.Io) !void {
     std.debug.print("🔨 Building project with dependencies...\n", .{});
 
     // Run zig build
-    var child = std.process.Child.init(&.{ "zig", "build" }, allocator);
-    const result = try child.spawnAndWait();
+    var child = try std.process.spawn(io, .{
+        .argv = &.{ "zig", "build" },
+    });
+    const result = try child.wait(io);
 
     switch (result) {
-        .Exited => |code| {
+        .exited => |code| {
             if (code == 0) {
                 std.debug.print("✅ Build successful!\n", .{});
             } else {
@@ -107,24 +116,27 @@ fn buildProject(allocator: std.mem.Allocator) !void {
     }
 }
 
-fn publishPackage(allocator: std.mem.Allocator) !void {
+fn publishPackage(allocator: std.mem.Allocator, io: std.Io) !void {
     std.debug.print("📤 Publishing package to registry...\n", .{});
 
     // Check if we're in a Zig project
-    const build_zon_file = std.fs.cwd().openFile("build.zig.zon", .{}) catch |err| switch (err) {
+    const build_zon_file = std.Io.Dir.cwd().openFile(io, "build.zig.zon", .{}) catch |err| switch (err) {
         error.FileNotFound => {
             std.debug.print("❌ Error: build.zig.zon not found. Initialize a project first with 'zepplin init'\n", .{});
             return;
         },
         else => return err,
     };
-    defer build_zon_file.close();
+    defer build_zon_file.close(io);
 
     // Read and parse build.zig.zon
-    const stat = try build_zon_file.stat();
+    const stat = try build_zon_file.stat(io);
     const content = try allocator.alloc(u8, stat.size);
     defer allocator.free(content);
-    _ = try build_zon_file.readAll(content);
+
+    var read_buf: [8192]u8 = undefined;
+    var reader = build_zon_file.reader(io, &read_buf);
+    try reader.interface.readSliceAll(content);
 
     // Simple package metadata extraction (for now)
     var name: ?[]const u8 = null;
@@ -159,7 +171,7 @@ fn publishPackage(allocator: std.mem.Allocator) !void {
     std.debug.print("🌐 Available at: https://zig.cktech.org/packages/{s}\n", .{name.?});
 }
 
-fn loginToRegistry(_: std.mem.Allocator, registry_url: ?[]const u8) !void {
+fn loginToRegistry(_: std.mem.Allocator, _: std.Io, registry_url: ?[]const u8) !void {
     const url = registry_url orelse "https://registry.zepplin.dev";
     std.debug.print("🔐 Logging in to registry: {s}\n", .{url});
 
@@ -168,10 +180,10 @@ fn loginToRegistry(_: std.mem.Allocator, registry_url: ?[]const u8) !void {
     std.debug.print("✅ Login successful!\n", .{});
 }
 
-fn discoverPackages(allocator: std.mem.Allocator, query: ?[]const u8) !void {
+fn discoverPackages(allocator: std.mem.Allocator, io: std.Io, query: ?[]const u8) !void {
     std.debug.print("🔍 Discovering packages via Zigistry...\n", .{});
-    
-    var zigistry_client = zigistry.ZigistryClient.init(allocator, null);
+
+    var zigistry_client = zigistry.ZigistryClient.init(allocator, io, null);
     defer zigistry_client.deinit();
 
     const search_query = query orelse "";
@@ -197,44 +209,56 @@ fn discoverPackages(allocator: std.mem.Allocator, query: ?[]const u8) !void {
         }
         std.debug.print("   ⭐ {} stars | 📊 Score: {d:.2}\n", .{ pkg.github_stars, pkg.zigistry_score });
         std.debug.print("   🔗 {s}\n", .{pkg.github_url});
-        
-        if (pkg.topics.len > 0) {
-            std.debug.print("   🏷️  Topics: ", .{});
-            for (pkg.topics, 0..) |topic, i| {
-                if (i > 0) std.debug.print(", ", .{});
-                std.debug.print("{s}", .{topic});
-            }
-            std.debug.print("\n", .{});
-        }
         std.debug.print("\n", .{});
     }
-
-    std.debug.print("💡 To add a package: zepplin add <package-name>\n", .{});
 }
 
-fn browsePackages(allocator: std.mem.Allocator, category: ?[]const u8) !void {
-    std.debug.print("🗂️  Browsing packages by category...\n", .{});
-    
-    var zigistry_client = zigistry.ZigistryClient.init(allocator, null);
+fn browsePackages(allocator: std.mem.Allocator, io: std.Io, category: ?[]const u8) !void {
+    std.debug.print("📂 Browsing packages...\n", .{});
+
+    var zigistry_client = zigistry.ZigistryClient.init(allocator, io, null);
     defer zigistry_client.deinit();
 
-    if (category == null) {
-        // Show available categories
+    if (category) |cat| {
+        std.debug.print("📁 Category: {s}\n\n", .{cat});
+        const packages = try zigistry_client.getTrending(cat, 10);
+        defer {
+            for (packages) |*pkg| {
+                pkg.deinit(allocator);
+            }
+            allocator.free(packages);
+        }
+
+        for (packages) |pkg| {
+            std.debug.print("🔸 {s} - {s}\n", .{ pkg.name, pkg.description orelse "No description" });
+        }
+    } else {
+        // Show categories
         const categories = try zigistry_client.getCategories();
         defer {
-            for (categories) |cat| {
-                allocator.free(cat);
+            for (categories) |cat_name| {
+                allocator.free(cat_name);
             }
             allocator.free(categories);
         }
 
-        std.debug.print("\n📚 Available categories:\n\n", .{});
-        for (categories) |cat| {
-            std.debug.print("  • {s}\n", .{cat});
+        std.debug.print("📁 Available categories:\n\n", .{});
+        for (categories) |cat_name| {
+            std.debug.print("   • {s}\n", .{cat_name});
         }
-        std.debug.print("\n💡 Use: zepplin browse --category=<name>\n", .{});
-        return;
+        std.debug.print("\nUse 'zepplin browse <category>' to view packages in a category.\n", .{});
     }
+}
+
+fn showTrending(allocator: std.mem.Allocator, io: std.Io, category: ?[]const u8) !void {
+    std.debug.print("🔥 Trending packages", .{});
+    if (category) |cat| {
+        std.debug.print(" in {s}", .{cat});
+    }
+    std.debug.print(":\n\n", .{});
+
+    var zigistry_client = zigistry.ZigistryClient.init(allocator, io, null);
+    defer zigistry_client.deinit();
 
     const packages = try zigistry_client.getTrending(category, 10);
     defer {
@@ -244,64 +268,12 @@ fn browsePackages(allocator: std.mem.Allocator, category: ?[]const u8) !void {
         allocator.free(packages);
     }
 
-    std.debug.print("\n📦 Top packages in '{s}' category:\n\n", .{category.?});
-
-    for (packages, 0..) |pkg, i| {
-        std.debug.print("{}. 🔸 {s}\n", .{ i + 1, pkg.name });
-        if (pkg.description) |desc| {
-            std.debug.print("     {s}\n", .{desc});
-        }
-        std.debug.print("     ⭐ {} stars | 📊 Score: {d:.2}\n", .{ pkg.github_stars, pkg.zigistry_score });
-        std.debug.print("     🔗 {s}\n\n", .{pkg.github_url});
-    }
-}
-
-fn showTrending(allocator: std.mem.Allocator, category: ?[]const u8) !void {
-    std.debug.print("🔥 Showing trending packages...\n", .{});
-    
-    var zigistry_client = zigistry.ZigistryClient.init(allocator, null);
-    defer zigistry_client.deinit();
-
-    const packages = try zigistry_client.getTrending(category, 15);
-    defer {
-        for (packages) |*pkg| {
-            pkg.deinit(allocator);
-        }
-        allocator.free(packages);
-    }
-
-    const section_title = if (category) |cat| 
-        try std.fmt.allocPrint(allocator, "🔥 Trending in '{s}':", .{cat})
-    else 
-        try allocator.dupe(u8, "🔥 Trending packages:");
-    defer allocator.free(section_title);
-
-    std.debug.print("\n{s}\n\n", .{section_title});
-
-    for (packages, 0..) |pkg, i| {
-        const rank_emoji = switch (i) {
-            0 => "🥇",
-            1 => "🥈", 
-            2 => "🥉",
-            else => "🔸",
-        };
-
-        std.debug.print("{s} {s}\n", .{ rank_emoji, pkg.name });
+    for (packages, 1..) |pkg, i| {
+        std.debug.print("#{} {s}\n", .{ i, pkg.name });
         if (pkg.description) |desc| {
             std.debug.print("   {s}\n", .{desc});
         }
         std.debug.print("   ⭐ {} stars | 📊 Score: {d:.2}\n", .{ pkg.github_stars, pkg.zigistry_score });
-        
-        if (pkg.topics.len > 0) {
-            std.debug.print("   🏷️  ", .{});
-            for (pkg.topics, 0..) |topic, j| {
-                if (j > 0) std.debug.print(", ", .{});
-                std.debug.print("{s}", .{topic});
-            }
-            std.debug.print("\n", .{});
-        }
         std.debug.print("\n", .{});
     }
-
-    std.debug.print("💡 Add any package with: zepplin add <package-name>\n", .{});
 }

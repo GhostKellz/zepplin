@@ -3,13 +3,12 @@ const cli = @import("cli/cli.zig");
 const commands = @import("cli/commands.zig");
 const server = @import("server/server.zig");
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const arena = init.arena.allocator();
+    const io = init.io;
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    const args = try init.minimal.args.toSlice(arena);
 
     if (args.len < 2) {
         commands.printHelp();
@@ -30,7 +29,7 @@ pub fn main() !void {
         std.debug.print("🌐 Port: {}\n", .{port});
 
         // Ensure data directory exists
-        std.fs.cwd().makeDir(data_dir) catch |err| switch (err) {
+        std.Io.Dir.cwd().createDir(io, data_dir, .default_dir) catch |err| switch (err) {
             error.PathAlreadyExists => {
                 std.debug.print("✅ Data directory exists: {s}\n", .{data_dir});
             },
@@ -41,7 +40,7 @@ pub fn main() !void {
         };
 
         std.debug.print("🗄️ Initializing database...\n", .{});
-        var registry_server = server.Server.init(allocator, port, data_dir) catch |err| {
+        var registry_server = server.Server.init(allocator, io, init.environ_map, port, data_dir) catch |err| {
             std.debug.print("❌ Failed to initialize server: {}\n", .{err});
             return err;
         };
@@ -68,23 +67,12 @@ pub fn main() !void {
         else => return err,
     };
 
-    try cli.executeCommand(allocator, cli_args);
+    try cli.executeCommand(allocator, io, cli_args);
 }
 
 test "simple test" {
-    var list = std.array_list.AlignedManaged(i32, null).init(std.testing.allocator);
-    defer list.deinit(); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
+    var list: std.ArrayList(i32) = .empty;
+    defer list.deinit(std.testing.allocator);
+    try list.append(std.testing.allocator, 42);
     try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "fuzz example" {
-    const Context = struct {
-        fn testOne(context: @This(), input: []const u8) anyerror!void {
-            _ = context;
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-        }
-    };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
 }

@@ -1,14 +1,17 @@
 const std = @import("std");
+const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
 
 pub const ZiglibsImporter = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     http_client: std.http.Client,
-    
-    pub fn init(allocator: std.mem.Allocator) ZiglibsImporter {
+
+    pub fn init(allocator: std.mem.Allocator, io: std.Io) ZiglibsImporter {
         return ZiglibsImporter{
             .allocator = allocator,
-            .http_client = std.http.Client{ .allocator = allocator },
+            .io = io,
+            .http_client = std.http.Client{ .allocator = allocator, .io = io },
         };
     }
     
@@ -53,8 +56,8 @@ pub const ZiglibsImporter = struct {
                 .homepage = try std.fmt.allocPrint(self.allocator, "https://github.com/{s}/{s}", .{ pkg.owner, pkg.repo }),
                 .github_url = try std.fmt.allocPrint(self.allocator, "https://github.com/{s}/{s}", .{ pkg.owner, pkg.repo }),
                 .github_stars = 0, // Will be fetched later
-                .created_at = std.time.timestamp(),
-                .updated_at = std.time.timestamp(),
+                .created_at = compat.timestamp(),
+                .updated_at = compat.timestamp(),
                 .is_private = false,
             };
             

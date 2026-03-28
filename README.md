@@ -141,7 +141,7 @@ src/
 ## 📋 Development
 
 ### Prerequisites
-- Zig 0.13.0 or later
+- Zig 0.16.0 or later
 - Docker (optional, for containerized deployment)
 
 ### Development Workflow
@@ -236,11 +236,12 @@ MIT
 
 ## 📚 Documentation
 
-- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Complete production deployment with nginx
-- **[Project Completion](PROJECT_COMPLETION.md)** - Summary of features and implementation
-- **[SQLite Integration](SQLITE_INTEGRATION.md)** - Database implementation details
-- **[Zigistry Integration](ZIGISTRY_INTEGRATION.md)** - Package discovery features
-- **[Database Migration](DATABASE_MIGRATION.md)** - Migration from zqlite to SQLite
+- **[Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md)** - Complete production deployment with nginx
+- **[Deployment Quickstart](docs/deployment/DEPLOYMENT_QUICKSTART.md)** - Quick deployment steps
+- **[SQLite Integration](docs/api/SQLITE_INTEGRATION.md)** - Database implementation details
+- **[Zigistry Integration](docs/api/ZIGISTRY_INTEGRATION.md)** - Package discovery features
+- **[GitHub OAuth Setup](docs/sso/GITHUB_OAUTH_SETUP.md)** - GitHub SSO configuration
+- **[OIDC Setup](docs/sso/OIDC_SETUP_DOC.md)** - OpenID Connect configuration
 
 ---
 

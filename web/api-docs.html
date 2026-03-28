@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Reference - Zepplin Registry</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .docs-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .docs-header {
+            margin-bottom: 3rem;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 2rem;
+        }
+        .docs-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--lightning-400);
+            margin-bottom: 0.5rem;
+        }
+        .docs-subtitle {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+        }
+        .api-section {
+            margin-bottom: 3rem;
+        }
+        .api-section h2 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .api-endpoint {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+        .api-endpoint-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .api-method {
+            font-family: 'Fira Code', monospace;
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+        }
+        .api-method.get { background: #238636; color: white; }
+        .api-method.post { background: #1f6feb; color: white; }
+        .api-method.put { background: #9e6a03; color: white; }
+        .api-method.delete { background: #da3633; color: white; }
+        .api-path {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+        .api-endpoint-body {
+            padding: 1.25rem;
+        }
+        .api-description {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            line-height: 1.6;
+        }
+        .api-params {
+            margin-top: 1rem;
+        }
+        .api-params h4 {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 0.75rem;
+        }
+        .api-param {
+            display: grid;
+            grid-template-columns: 150px 80px 1fr;
+            gap: 0.5rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border-subtle);
+            font-size: 0.9rem;
+        }
+        .api-param:last-child { border-bottom: none; }
+        .api-param-name {
+            font-family: 'Fira Code', monospace;
+            color: var(--lightning-400);
+        }
+        .api-param-type {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        .api-param-desc {
+            color: var(--text-secondary);
+        }
+        .api-required {
+            color: #da3633;
+            font-size: 0.75rem;
+        }
+        .code-block {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.5rem;
+            padding: 1rem 1.25rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        .nav-breadcrumb {
+            margin-bottom: 2rem;
+        }
+        .nav-breadcrumb a {
+            color: var(--text-muted);
+            text-decoration: none;
+        }
+        .nav-breadcrumb a:hover {
+            color: var(--lightning-400);
+        }
+        .nav-breadcrumb span {
+            color: var(--text-muted);
+            margin: 0 0.5rem;
+        }
+        .toc {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .toc h3 {
+            font-size: 1rem;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+        }
+        .toc ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .toc li {
+            margin-bottom: 0.5rem;
+        }
+        .toc a {
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+        .toc a:hover {
+            color: var(--lightning-400);
+        }
+        .inline-code {
+            background: var(--bg-tertiary);
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9em;
+            color: var(--lightning-400);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-logo">
+                <img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img">
+                <span>Zepplin</span>
+            </a>
+            <div class="nav-links">
+                <a href="/packages" class="nav-link">Packages</a>
+                <a href="/docs" class="nav-link active">Docs</a>
+                <a href="/publish" class="nav-link">Publish</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="docs-container">
+        <nav class="nav-breadcrumb">
+            <a href="/">Home</a>
+            <span>/</span>
+            <a href="/docs">Documentation</a>
+            <span>/</span>
+            <span style="color: var(--text-primary);">API Reference</span>
+        </nav>
+
+        <header class="docs-header">
+            <h1 class="docs-title">API Reference</h1>
+            <p class="docs-subtitle">RESTful API for the Zepplin package registry</p>
+        </header>
+
+        <nav class="toc">
+            <h3>Contents</h3>
+            <ul>
+                <li><a href="#overview">Overview</a></li>
+                <li><a href="#packages">Packages API</a></li>
+                <li><a href="#search">Search API</a></li>
+                <li><a href="#auth">Authentication API</a></li>
+                <li><a href="#health">Health Check</a></li>
+            </ul>
+        </nav>
+
+        <section id="overview" class="api-section">
+            <h2>Overview</h2>
+            <p class="api-description">
+                The Zepplin API is a RESTful interface for interacting with the package registry.
+                All endpoints return JSON responses and use standard HTTP status codes.
+            </p>
+            <p class="api-description">
+                <strong>Base URL:</strong> <code class="inline-code">https://your-registry.example.com/api/v1</code>
+            </p>
+            <p class="api-description">
+                <strong>Authentication:</strong> Some endpoints require authentication via Bearer token in the
+                <code class="inline-code">Authorization</code> header.
+            </p>
+        </section>
+
+        <section id="packages" class="api-section">
+            <h2>Packages API</h2>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method get">GET</span>
+                    <span class="api-path">/api/v1/packages</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">List all available packages in the registry.</p>
+                    <div class="api-params">
+                        <h4>Query Parameters</h4>
+                        <div class="api-param">
+                            <span class="api-param-name">page</span>
+                            <span class="api-param-type">integer</span>
+                            <span class="api-param-desc">Page number for pagination (default: 1)</span>
+                        </div>
+                        <div class="api-param">
+                            <span class="api-param-name">limit</span>
+                            <span class="api-param-type">integer</span>
+                            <span class="api-param-desc">Results per page (default: 20, max: 100)</span>
+                        </div>
+                    </div>
+                    <h4 style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-muted);">Example Response</h4>
+                    <div class="code-block">
+{
+  "packages": [
+    {
+      "name": "zig-clap",
+      "description": "Command line argument parsing library",
+      "version": "0.5.0",
+      "stars": 823
+    }
+  ],
+  "total": 156,
+  "page": 1
+}</div>
+                </div>
+            </div>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method get">GET</span>
+                    <span class="api-path">/api/v1/packages/{owner}/{repo}</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Get details for a specific package.</p>
+                    <div class="api-params">
+                        <h4>Path Parameters</h4>
+                        <div class="api-param">
+                            <span class="api-param-name">owner</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Package owner/organization <span class="api-required">required</span></span>
+                        </div>
+                        <div class="api-param">
+                            <span class="api-param-name">repo</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Package repository name <span class="api-required">required</span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method post">POST</span>
+                    <span class="api-path">/api/v1/packages/{owner}/{repo}/releases</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Publish a new package release. Requires authentication.</p>
+                    <div class="api-params">
+                        <h4>Headers</h4>
+                        <div class="api-param">
+                            <span class="api-param-name">Authorization</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Bearer token <span class="api-required">required</span></span>
+                        </div>
+                        <div class="api-param">
+                            <span class="api-param-name">Content-Type</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">multipart/form-data <span class="api-required">required</span></span>
+                        </div>
+                    </div>
+                    <div class="api-params">
+                        <h4>Form Fields</h4>
+                        <div class="api-param">
+                            <span class="api-param-name">file</span>
+                            <span class="api-param-type">file</span>
+                            <span class="api-param-desc">Package tarball (.tar.gz) <span class="api-required">required</span></span>
+                        </div>
+                        <div class="api-param">
+                            <span class="api-param-name">tag_name</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Version tag (e.g., "v1.0.0") <span class="api-required">required</span></span>
+                        </div>
+                        <div class="api-param">
+                            <span class="api-param-name">body</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Release notes/description</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method get">GET</span>
+                    <span class="api-path">/api/v1/packages/{owner}/{repo}/tarball/{version}</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Download a package tarball for a specific version.</p>
+                </div>
+            </div>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method get">GET</span>
+                    <span class="api-path">/api/v1/packages/{owner}/{repo}/hash/{version}</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Get the SHA256 hash for a package version (used by zig fetch).</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="search" class="api-section">
+            <h2>Search API</h2>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method get">GET</span>
+                    <span class="api-path">/api/v1/search</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Search for packages by name, description, or tags.</p>
+                    <div class="api-params">
+                        <h4>Query Parameters</h4>
+                        <div class="api-param">
+                            <span class="api-param-name">q</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Search query <span class="api-required">required</span></span>
+                        </div>
+                        <div class="api-param">
+                            <span class="api-param-name">category</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Filter by category</span>
+                        </div>
+                        <div class="api-param">
+                            <span class="api-param-name">limit</span>
+                            <span class="api-param-type">integer</span>
+                            <span class="api-param-desc">Max results (default: 20)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method get">GET</span>
+                    <span class="api-path">/api/v1/trending</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Get trending packages based on recent activity and popularity.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="auth" class="api-section">
+            <h2>Authentication API</h2>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method get">GET</span>
+                    <span class="api-path">/api/v1/auth/oauth/github/login</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Initiate GitHub OAuth flow. Redirects to GitHub for authentication.</p>
+                </div>
+            </div>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method get">GET</span>
+                    <span class="api-path">/api/v1/auth/oidc/microsoft/login</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Initiate Microsoft Entra (Azure AD) OIDC flow.</p>
+                </div>
+            </div>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method post">POST</span>
+                    <span class="api-path">/api/v1/auth/register</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Register a new user account.</p>
+                    <div class="api-params">
+                        <h4>Request Body (JSON)</h4>
+                        <div class="api-param">
+                            <span class="api-param-name">username</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Unique username <span class="api-required">required</span></span>
+                        </div>
+                        <div class="api-param">
+                            <span class="api-param-name">email</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Email address <span class="api-required">required</span></span>
+                        </div>
+                        <div class="api-param">
+                            <span class="api-param-name">password</span>
+                            <span class="api-param-type">string</span>
+                            <span class="api-param-desc">Password (min 8 chars) <span class="api-required">required</span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="health" class="api-section">
+            <h2>Health Check</h2>
+
+            <div class="api-endpoint">
+                <div class="api-endpoint-header">
+                    <span class="api-method get">GET</span>
+                    <span class="api-path">/health</span>
+                </div>
+                <div class="api-endpoint-body">
+                    <p class="api-description">Check if the registry server is healthy and responding.</p>
+                    <h4 style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-muted);">Example Response</h4>
+                    <div class="code-block">
+{
+  "status": "healthy",
+  "version": "0.5.0"
+}</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>Zepplin</h4>
+                <p>A modern package registry for the Zig ecosystem</p>
+            </div>
+            <div class="footer-section">
+                <h4>Documentation</h4>
+                <ul>
+                    <li><a href="/docs/getting-started">Getting Started</a></li>
+                    <li><a href="/docs/api">API Reference</a></li>
+                    <li><a href="/docs/cli">CLI Usage</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Community</h4>
+                <ul>
+                    <li><a href="https://github.com/ckgxrg-salt/zepplin">GitHub</a></li>
+                    <li><a href="/docs/contribute">Contributing</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>Built with Zig. Powered by Zepplin.</p>
+        </div>
+    </footer>
+</body>
+</html>

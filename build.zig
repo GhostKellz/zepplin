@@ -28,13 +28,7 @@ pub fn build(b: *std.Build) void {
     // addModule defines a module that we intend to make available for importing
     // to our consumers. We must give it a name because a Zig package can expose
     // module they want to access.
-    // shroud dependency for cryptographic operations
-    const shroud = b.dependency("shroud", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // zqlite dependency for post-quantum secure database
+    // zqlite dependency for database operations
     const zqlite = b.dependency("zqlite", .{
         .target = target,
         .optimize = optimize,
@@ -95,10 +89,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // Add shroud import using the correct module name from shroud's build.zig
-    exe.root_module.addImport("shroud", shroud.module("shroud"));
-    
-    // Add zqlite import for post-quantum secure database
+    // Add zqlite import for database operations
     exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 
     // This declares intent for the executable to be installed into the

@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
 const auth_oidc = @import("auth_oidc.zig");
 const auth_github = @import("auth_github.zig");
@@ -44,29 +45,31 @@ pub const UnifiedUser = struct {
 
 pub const UnifiedAuthSystem = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     oidc_client: ?auth_oidc.OIDCClient,
     github_client: ?auth_github.GitHubOAuthClient,
     jwt_secret: []const u8,
-    
-    pub fn init(allocator: std.mem.Allocator) !UnifiedAuthSystem {
-        const jwt_secret = std.process.getEnvVarOwned(allocator, "JWT_SECRET") catch "default_secret_change_in_production";
-        
+
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, environ_map: *std.process.Environ.Map) !UnifiedAuthSystem {
+        const jwt_secret = environ_map.get("JWT_SECRET") orelse "default_secret_change_in_production";
+
         // Initialize OIDC client if configured
         var oidc_client: ?auth_oidc.OIDCClient = null;
-        if (std.process.hasEnvVarConstant("AZURE_CLIENT_ID")) {
-            const oidc_config = try auth_oidc.OIDCConfig.getMicrosoftConfig(allocator);
-            oidc_client = auth_oidc.OIDCClient.init(allocator, oidc_config);
+        if (environ_map.get("AZURE_CLIENT_ID") != null) {
+            const oidc_config = try auth_oidc.OIDCConfig.getMicrosoftConfig(allocator, environ_map);
+            oidc_client = auth_oidc.OIDCClient.init(allocator, io, oidc_config);
         }
-        
+
         // Initialize GitHub client if configured
         var github_client: ?auth_github.GitHubOAuthClient = null;
-        if (std.process.hasEnvVarConstant("GITHUB_CLIENT_ID")) {
-            const github_config = try auth_github.GitHubOAuthConfig.fromEnv(allocator);
-            github_client = auth_github.GitHubOAuthClient.init(allocator, github_config);
+        if (environ_map.get("GITHUB_CLIENT_ID") != null) {
+            const github_config = try auth_github.GitHubOAuthConfig.fromEnv(allocator, environ_map);
+            github_client = auth_github.GitHubOAuthClient.init(allocator, io, github_config);
         }
-        
+
         return UnifiedAuthSystem{
             .allocator = allocator,
+            .io = io,
             .oidc_client = oidc_client,
             .github_client = github_client,
             .jwt_secret = try allocator.dupe(u8, jwt_secret),
@@ -135,8 +138,8 @@ pub const UnifiedAuthSystem = struct {
                         .primary_provider = .microsoft,
                         .linked_accounts = &[_]LinkedAccount{},
                         .api_token = null,
-                        .created_at = std.time.timestamp(),
-                        .updated_at = std.time.timestamp(),
+                        .created_at = compat.timestamp(),
+                        .updated_at = compat.timestamp(),
                     };
                 }
                 return error.ProviderNotConfigured;
@@ -174,8 +177,8 @@ pub const UnifiedAuthSystem = struct {
                         .primary_provider = .github,
                         .linked_accounts = &[_]LinkedAccount{},
                         .api_token = null,
-                        .created_at = std.time.timestamp(),
-                        .updated_at = std.time.timestamp(),
+                        .created_at = compat.timestamp(),
+                        .updated_at = compat.timestamp(),
                     };
                 }
                 return error.ProviderNotConfigured;
@@ -211,8 +214,8 @@ pub const UnifiedAuthSystem = struct {
                 user.display_name orelse user.username,
                 user.avatar_url orelse "",
                 @tagName(user.primary_provider),
-                std.time.timestamp(),
-                std.time.timestamp() + 86400, // 24 hours
+                compat.timestamp(),
+                compat.timestamp() + 86400, // 24 hours
             }
         );
         defer self.allocator.free(payload);
@@ -283,7 +286,7 @@ pub const UnifiedAuthSystem = struct {
             .provider_id = "provider_123",
             .email = "linked@example.com",
             .display_name = "Linked Account",
-            .linked_at = std.time.timestamp(),
+            .linked_at = compat.timestamp(),
         };
     }
     

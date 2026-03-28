@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
 
 /// In-memory database implementation (ready for SQLite upgrade)
@@ -96,7 +97,7 @@ pub const Database = struct {
             .email = "test@example.com",
             .password_hash = "mock-hash",
             .api_token = "test-token",
-            .created_at = std.time.timestamp(),
+            .created_at = compat.timestamp(),
             .is_active = true,
         });
 
@@ -175,7 +176,7 @@ pub const Database = struct {
             .email = email,
             .password_hash = password_hash,
             .api_token = api_token,
-            .created_at = std.time.timestamp(),
+            .created_at = compat.timestamp(),
             .is_active = true,
         });
     }
@@ -225,7 +226,7 @@ pub const Database = struct {
     // Comment operations
     pub fn addComment(self: *Database, request: types.CommentRequest, user_id: u64, username: []const u8, display_name: ?[]const u8) !u64 {
         const comment_id = self.comment_id_counter.fetchAdd(1, .monotonic);
-        const now = std.time.timestamp();
+        const now = compat.timestamp();
         
         const comment = types.Comment{
             .id = comment_id,
@@ -260,7 +261,7 @@ pub const Database = struct {
             if (comment.id == comment_id and comment.user_id == user_id and !comment.is_deleted) {
                 self.allocator.free(comment.content);
                 comment.content = try self.allocator.dupe(u8, new_content);
-                comment.updated_at = std.time.timestamp();
+                comment.updated_at = compat.timestamp();
                 return true;
             }
         }

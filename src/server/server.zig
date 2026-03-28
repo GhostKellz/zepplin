@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
 const Database = @import("../database/database.zig").Database;
 const Auth = @import("../auth/auth.zig").Auth;
@@ -8,8 +9,8 @@ const ZiglibsImporter = @import("../tools/ziglibs_import.zig").ZiglibsImporter;
 
 const ZEPPLIN_VERSION = "0.5.0";
 
-const RouteHandler = *const fn (self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) anyerror!void;
-const StaticHandler = *const fn (self: *Server, stream: std.net.Stream, path: []const u8) anyerror!void;
+const RouteHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) anyerror!void;
+const StaticHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8) anyerror!void;
 const PrefixRoute = struct { prefix: []const u8, handler: RouteHandler };
 
 const ServerError = error{
@@ -39,12 +40,12 @@ const CacheEntry = struct {
     last_accessed: i64,
     
     pub fn isExpired(self: CacheEntry) bool {
-        return std.time.timestamp() > self.timestamp + self.ttl;
+        return compat.timestamp() > self.timestamp + self.ttl;
     }
     
     pub fn touch(self: *CacheEntry) void {
         self.access_count += 1;
-        self.last_accessed = std.time.timestamp();
+        self.last_accessed = compat.timestamp();
     }
 };
 
@@ -178,45 +179,51 @@ const LRUCache = struct {
 
 pub const Server = struct {
     allocator: std.mem.Allocator,
-    address: std.net.Address,
+    io: std.Io,
+    environ_map: *std.process.Environ.Map,
+    address: std.Io.net.IpAddress,
     database: Database,
     auth: Auth,
     storage: Storage,
     zigistry: ZigistryClient,
-    
+
     // Route optimization
     exact_routes: std.HashMap([]const u8, RouteHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
-    prefix_routes: std.array_list.AlignedManaged(PrefixRoute, null),
+    prefix_routes: std.ArrayList(PrefixRoute),
     static_routes: std.HashMap([]const u8, StaticHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
-    
+
     // Response caching
     response_cache: std.HashMap([]const u8, CacheEntry, std.hash_map.StringContext, std.hash_map.default_max_load_percentage),
     file_cache: LRUCache,
 
-    pub fn init(allocator: std.mem.Allocator, port: u16, data_dir: []const u8) !Server {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, environ_map: *std.process.Environ.Map, port: u16, data_dir: []const u8) !Server {
+        // Helper to get env var with fallback
+        const getEnv = struct {
+            fn get(env: *std.process.Environ.Map, key: []const u8) ?[]const u8 {
+                return env.get(key);
+            }
+        }.get;
+
         // Load configuration from environment variables
-        const bind_address = std.process.getEnvVarOwned(allocator, "ZEPPLIN_BIND_ADDRESS") catch 
-            try allocator.dupe(u8, "0.0.0.0");
-        defer allocator.free(bind_address);
+        const bind_address = getEnv(environ_map, "ZEPPLIN_BIND_ADDRESS") orelse "0.0.0.0";
 
         const actual_port = blk: {
-            if (std.process.getEnvVarOwned(allocator, "ZEPPLIN_PORT")) |port_str| {
-                defer allocator.free(port_str);
+            if (getEnv(environ_map, "ZEPPLIN_PORT")) |port_str| {
                 break :blk std.fmt.parseInt(u16, port_str, 10) catch port;
-            } else |_| {
+            } else {
                 break :blk port;
             }
         };
 
-        const address = try std.net.Address.resolveIp(bind_address, actual_port);
+        const address = try std.Io.net.IpAddress.parse(bind_address, actual_port);
 
         // Initialize database
         const db_path = blk: {
-            if (std.process.getEnvVarOwned(allocator, "ZEPPLIN_DB_PATH")) |path| {
+            if (getEnv(environ_map, "ZEPPLIN_DB_PATH")) |path| {
                 std.debug.print("🗄️  Using database path from environment: {s}\n", .{path});
-                break :blk path;
-            } else |_| {
-                break :blk try std.fs.path.join(allocator, &.{ data_dir, "zepplin.db" });
+                break :blk try allocator.dupe(u8, path);
+            } else {
+                break :blk try std.Io.Dir.path.join(allocator, &.{ data_dir, "zepplin.db" });
             }
         };
         defer allocator.free(db_path);
@@ -224,48 +231,46 @@ pub const Server = struct {
 
         // Initialize auth with secret key from environment or generate default
         const secret_key = blk: {
-            if (std.process.getEnvVarOwned(allocator, "ZEPPLIN_SECRET_KEY")) |key| {
+            if (getEnv(environ_map, "ZEPPLIN_SECRET_KEY")) |key| {
                 if (key.len < 32) {
                     std.debug.print("⚠️  Secret key too short (minimum 32 characters)\n", .{});
-                    allocator.free(key);
-                    break :blk try allocator.dupe(u8, "default-insecure-key-change-in-production");
+                    break :blk "default-insecure-key-change-in-production";
                 }
                 std.debug.print("🔑 Using secret key from environment\n", .{});
                 break :blk key;
-            } else |_| {
+            } else {
                 std.debug.print("⚠️  No ZEPPLIN_SECRET_KEY found, using default (INSECURE for production!)\n", .{});
-                break :blk try allocator.dupe(u8, "default-insecure-key-change-in-production-min32chars");
+                break :blk "default-insecure-key-change-in-production-min32chars";
             }
         };
-        defer allocator.free(secret_key);
-        const auth = Auth.init(allocator, secret_key);
+        const auth = Auth.init(allocator, io, secret_key);
 
         // Initialize storage with configurable path
         const storage_dir = blk: {
-            if (std.process.getEnvVarOwned(allocator, "ZEPPLIN_STORAGE_PATH")) |path| {
+            if (getEnv(environ_map, "ZEPPLIN_STORAGE_PATH")) |path| {
                 std.debug.print("📦 Using storage path from environment: {s}\n", .{path});
                 break :blk path;
-            } else |_| {
-                break :blk try allocator.dupe(u8, data_dir);
+            } else {
+                break :blk data_dir;
             }
         };
-        defer allocator.free(storage_dir);
-        const storage = try Storage.init(allocator, storage_dir);
+        const storage = try Storage.init(allocator, io, storage_dir);
 
         // Initialize Zigistry client with configurable URL
-        const zigistry_url = std.process.getEnvVarOwned(allocator, "ZEPPLIN_ZIGISTRY_URL") catch null;
-        defer if (zigistry_url) |url| allocator.free(url);
-        const zigistry = ZigistryClient.init(allocator, zigistry_url);
+        const zigistry_url = getEnv(environ_map, "ZEPPLIN_ZIGISTRY_URL");
+        const zigistry = ZigistryClient.init(allocator, io, zigistry_url);
 
         var server = Server{
             .allocator = allocator,
+            .io = io,
+            .environ_map = environ_map,
             .address = address,
             .database = database,
             .auth = auth,
             .storage = storage,
             .zigistry = zigistry,
             .exact_routes = std.HashMap([]const u8, RouteHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
-            .prefix_routes = std.array_list.AlignedManaged(PrefixRoute, null).init(allocator),
+            .prefix_routes = .empty,
             .static_routes = std.HashMap([]const u8, StaticHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
             .response_cache = std.HashMap([]const u8, CacheEntry, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
             .file_cache = LRUCache.init(allocator, 100), // Cache up to 100 files
@@ -280,9 +285,9 @@ pub const Server = struct {
     pub fn deinit(self: *Server) void {
         // Clean up cache entries
         self.cleanupCache(&self.response_cache);
-        
+
         self.exact_routes.deinit();
-        self.prefix_routes.deinit();
+        self.prefix_routes.deinit(self.allocator);
         self.static_routes.deinit();
         self.response_cache.deinit();
         self.file_cache.deinit();
@@ -294,7 +299,7 @@ pub const Server = struct {
     pub fn syncZiglibs(self: *Server) !u32 {
         std.log.info("🔄 Starting Ziglibs sync...", .{});
         
-        var importer = ZiglibsImporter.init(self.allocator);
+        var importer = ZiglibsImporter.init(self.allocator, self.io);
         defer importer.deinit();
         
         const imported_count = try importer.importPackages(&self.database);
@@ -314,84 +319,112 @@ pub const Server = struct {
     fn initRoutes(self: *Server) !void {
         // Exact route matches
         try self.exact_routes.put("/", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
                 try server.serveStaticFile(stream, "web/templates/index.html");
             }
         }.handler);
         
         try self.exact_routes.put("/health", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
                 try server.handleHealthSimple(stream);
             }
         }.handler);
         
         try self.exact_routes.put("/docs", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
                 try server.serveStaticFile(stream, "web/docs.html");
             }
         }.handler);
-        
+
+        try self.exact_routes.put("/docs/getting-started", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.serveStaticFile(stream, "web/getting-started.html");
+            }
+        }.handler);
+
+        try self.exact_routes.put("/docs/api", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.serveStaticFile(stream, "web/api-docs.html");
+            }
+        }.handler);
+
+        try self.exact_routes.put("/docs/cli", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.serveStaticFile(stream, "web/cli-docs.html");
+            }
+        }.handler);
+
+        try self.exact_routes.put("/docs/contribute", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.serveStaticFile(stream, "web/contribute.html");
+            }
+        }.handler);
+
         try self.exact_routes.put("/api/v1/registry/config", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
                 try server.handleRegistryConfigV1(stream);
             }
         }.handler);
         
         try self.exact_routes.put("/api/v1/health", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
                 try server.handleHealthV1(stream);
             }
         }.handler);
         
         try self.exact_routes.put("/api/v1/stats", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
                 try server.handleStatsApi(stream);
             }
         }.handler);
         
         try self.exact_routes.put("/api/v1/auth/me", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request_allocator;
                 try server.handleUserProfile(stream, request);
             }
         }.handler);
         
         // Prefix route matches
-        try self.prefix_routes.append(.{ .prefix = "/api/v1/packages/", .handler = struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+        try self.prefix_routes.append(self.allocator, .{ .prefix = "/api/v1/packages/", .handler = struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = request; _ = request_allocator;
                 try server.handlePackageApiV1(stream, path);
             }
         }.handler });
         
-        try self.prefix_routes.append(.{ .prefix = "/api/v1/search", .handler = struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+        try self.prefix_routes.append(self.allocator, .{ .prefix = "/api/v1/search", .handler = struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = request; _ = request_allocator;
                 try server.handleSearchApiV1(stream, path);
             }
         }.handler });
         
-        try self.prefix_routes.append(.{ .prefix = "/api/v1/resolve/", .handler = struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+        try self.prefix_routes.append(self.allocator, .{ .prefix = "/api/v1/resolve/", .handler = struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = request; _ = request_allocator;
                 try server.handleResolveApiV1(stream, path);
             }
         }.handler });
         
-        try self.prefix_routes.append(.{ .prefix = "/api/v1/comments/", .handler = struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+        try self.prefix_routes.append(self.allocator, .{ .prefix = "/api/v1/comments/", .handler = struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 try server.handleCommentsApiV1(stream, path, request, request_allocator);
             }
         }.handler });
         
-        try self.prefix_routes.append(.{ .prefix = "/packages/", .handler = struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+        try self.prefix_routes.append(self.allocator, .{ .prefix = "/packages/", .handler = struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = request; _ = request_allocator;
                 try server.handlePackagePage(stream, path);
             }
@@ -399,7 +432,7 @@ pub const Server = struct {
         
         // Static file routes
         try self.static_routes.put("/css/", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
                 const file_path = try std.fmt.allocPrint(server.allocator, "web{s}", .{path});
                 defer server.allocator.free(file_path);
                 try server.serveStaticFile(stream, file_path);
@@ -407,7 +440,7 @@ pub const Server = struct {
         }.handler);
         
         try self.static_routes.put("/js/", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
                 const file_path = try std.fmt.allocPrint(server.allocator, "web{s}", .{path});
                 defer server.allocator.free(file_path);
                 try server.serveStaticFile(stream, file_path);
@@ -415,7 +448,7 @@ pub const Server = struct {
         }.handler);
         
         try self.static_routes.put("/images/", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
                 const file_path = try std.fmt.allocPrint(server.allocator, "web{s}", .{path});
                 defer server.allocator.free(file_path);
                 try server.serveStaticFile(stream, file_path);
@@ -423,7 +456,7 @@ pub const Server = struct {
         }.handler);
         
         try self.static_routes.put("/assets/", struct {
-            fn handler(server: *Server, stream: std.net.Stream, path: []const u8) !void {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
                 const file_path = try std.fmt.allocPrint(server.allocator, "assets{s}", .{path[7..]});
                 defer server.allocator.free(file_path);
                 try server.serveStaticFile(stream, file_path);
@@ -432,8 +465,8 @@ pub const Server = struct {
     }
 
     pub fn start(self: *Server) !void {
-        var server = try self.address.listen(.{ .reuse_address = true });
-        defer server.deinit();
+        var net_server = try self.address.listen(self.io, .{ .reuse_address = true });
+        defer net_server.deinit(self.io);
 
         std.debug.print("🚀 Zepplin Registry Server starting on http://localhost:{}\n", .{self.address.getPort()});
         std.debug.print("📦 Ready to serve packages!\n", .{});
@@ -441,20 +474,20 @@ pub const Server = struct {
         std.debug.print("⚠️  Using default secret key - set ZEPPLIN_SECRET_KEY for production!\n", .{});
 
         while (true) {
-            const connection = server.accept() catch |err| {
+            const stream = net_server.accept(self.io) catch |err| {
                 std.debug.print("❌ Failed to accept connection: {}\n", .{err});
                 continue;
             };
 
             // Handle connection in a separate thread (simplified for prototype)
-            self.handleConnection(connection) catch |err| {
+            self.handleStream(stream) catch |err| {
                 std.debug.print("❌ Error handling connection: {}\n", .{err});
             };
         }
     }
 
-    fn handleConnection(self: *Server, connection: std.net.Server.Connection) !void {
-        defer connection.stream.close();
+    fn handleStream(self: *Server, stream: std.Io.net.Stream) !void {
+        defer stream.close(self.io);
 
         // Use arena allocator for request-scoped allocations
         var arena = std.heap.ArenaAllocator.init(self.allocator);
@@ -462,7 +495,12 @@ pub const Server = struct {
         const request_allocator = arena.allocator();
 
         var buffer: [4096]u8 = undefined;
-        const bytes_read = try connection.stream.read(&buffer);
+        var read_buf: [4096]u8 = undefined;
+        var reader = stream.reader(self.io, &read_buf);
+        const bytes_read = reader.interface.readSliceShort(&buffer) catch |err| {
+            std.debug.print("❌ Failed to read request: {}\n", .{err});
+            return;
+        };
         const request = buffer[0..bytes_read];
 
         // Parse HTTP request (simplified)
@@ -473,10 +511,10 @@ pub const Server = struct {
         const method = parts.next() orelse return ServerError.InvalidRequest;
         const path = parts.next() orelse return ServerError.InvalidRequest;
 
-        try self.routeRequest(connection.stream, method, path, request, request_allocator);
+        try self.routeRequest(stream, method, path, request, request_allocator);
     }
 
-    fn routeRequest(self: *Server, stream: std.net.Stream, method: []const u8, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+    fn routeRequest(self: *Server, stream: std.Io.net.Stream, method: []const u8, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
         std.debug.print("📡 {s} {s}\n", .{ method, path });
 
         if (std.mem.eql(u8, method, "GET")) {
@@ -589,7 +627,7 @@ pub const Server = struct {
         }
     }
 
-    fn serveStaticFile(self: *Server, stream: std.net.Stream, file_path: []const u8) !void {
+    fn serveStaticFile(self: *Server, stream: std.Io.net.Stream, file_path: []const u8) !void {
         // Check LRU cache first
         if (self.file_cache.get(file_path)) |entry| {
             if (!entry.isExpired()) {
@@ -599,20 +637,20 @@ pub const Server = struct {
                 );
                 defer self.allocator.free(response);
                 
-                try stream.writeAll(response);
-                try stream.writeAll(entry.content);
+                try compat.streamWriteAll(stream, self.io,response);
+                try compat.streamWriteAll(stream, self.io,entry.content);
                 return;
             }
         }
         
-        const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
+        const file = std.Io.Dir.cwd().openFile(self.io, file_path, .{}) catch |err| {
             std.debug.print("❌ Failed to open file {s}: {}\n", .{ file_path, err });
             try self.serve404(stream);
             return;
         };
-        defer file.close();
+        defer file.close(self.io);
 
-        const file_size = try file.getEndPos();
+        const file_size = (try file.stat(self.io)).size;
         
         // Stream large files in chunks to reduce memory usage
         const max_size_for_full_load = 64 * 1024; // 64KB threshold
@@ -625,9 +663,11 @@ pub const Server = struct {
         }
     }
 
-    fn serveFileInMemory(self: *Server, stream: std.net.Stream, file: std.fs.File, file_size: u64, file_path: []const u8, should_cache: bool) !void {
+    fn serveFileInMemory(self: *Server, stream: std.Io.net.Stream, file: std.Io.File, file_size: u64, file_path: []const u8, should_cache: bool) !void {
         const content = try self.allocator.alloc(u8, file_size);
-        _ = try file.read(content);
+        var read_buf: [8192]u8 = undefined;
+        var reader = file.reader(self.io, &read_buf);
+        try reader.interface.readSliceAll(content);
         
         if (should_cache) {
             // Cache the file content
@@ -638,10 +678,10 @@ pub const Server = struct {
             const cache_entry = CacheEntry{
                 .content = cached_content,
                 .content_type = content_type,
-                .timestamp = std.time.timestamp(),
+                .timestamp = compat.timestamp(),
                 .ttl = 3600, // 1 hour TTL
                 .access_count = 0,
-                .last_accessed = std.time.timestamp(),
+                .last_accessed = compat.timestamp(),
             };
             
             try self.file_cache.put(cached_path, cache_entry);
@@ -654,7 +694,7 @@ pub const Server = struct {
         }
     }
 
-    fn serveFileStreaming(self: *Server, stream: std.net.Stream, file: std.fs.File, file_size: u64, file_path: []const u8) !void {
+    fn serveFileStreaming(self: *Server, stream: std.Io.net.Stream, file: std.Io.File, file_size: u64, file_path: []const u8) !void {
         // Send headers first
         try self.sendFileHeaders(stream, file_size, file_path);
         
@@ -663,17 +703,23 @@ pub const Server = struct {
         var buffer: [chunk_size]u8 = undefined;
         var bytes_remaining = file_size;
         
+        var read_buf: [chunk_size]u8 = undefined;
+        var file_reader = file.reader(self.io, &read_buf);
+
         while (bytes_remaining > 0) {
             const to_read = @min(bytes_remaining, chunk_size);
-            const bytes_read = try file.read(buffer[0..to_read]);
+            const bytes_read = file_reader.interface.readSliceShort(buffer[0..to_read]) catch |err| {
+                std.debug.print("❌ Failed to read file: {}\n", .{err});
+                break;
+            };
             if (bytes_read == 0) break;
-            
-            try stream.writeAll(buffer[0..bytes_read]);
+
+            try compat.streamWriteAll(stream, self.io, buffer[0..bytes_read]);
             bytes_remaining -= bytes_read;
         }
     }
 
-    fn sendFileHeaders(self: *Server, stream: std.net.Stream, file_size: u64, file_path: []const u8) !void {
+    fn sendFileHeaders(self: *Server, stream: std.Io.net.Stream, file_size: u64, file_path: []const u8) !void {
         const content_type = self.getContentType(file_path);
         
         const response = try std.fmt.allocPrint(self.allocator, 
@@ -682,10 +728,10 @@ pub const Server = struct {
         );
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn sendFileResponse(self: *Server, stream: std.net.Stream, content: []const u8, file_path: []const u8) !void {
+    fn sendFileResponse(self: *Server, stream: std.Io.net.Stream, content: []const u8, file_path: []const u8) !void {
         const content_type = self.getContentType(file_path);
         
         const response = try std.fmt.allocPrint(self.allocator, 
@@ -694,8 +740,8 @@ pub const Server = struct {
         );
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
-        try stream.writeAll(content);
+        try compat.streamWriteAll(stream, self.io,response);
+        try compat.streamWriteAll(stream, self.io,content);
     }
 
     fn getContentType(self: *Server, file_path: []const u8) []const u8 {
@@ -721,7 +767,7 @@ pub const Server = struct {
             "application/octet-stream";
     }
 
-    fn serveWebUI(self: *Server, stream: std.net.Stream) !void {
+    fn serveWebUI(self: *Server, stream: std.Io.net.Stream) !void {
         // Get real statistics from database
         const stats = try self.database.getDownloadStats();
 
@@ -984,10 +1030,10 @@ pub const Server = struct {
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{s}", .{ html_content.len, html_content });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn handlePackageApi(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handlePackageApi(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         if (std.mem.eql(u8, path, "/api/packages")) {
             // List packages
             const packages = try self.database.listPackages(50, 0);
@@ -1037,14 +1083,14 @@ pub const Server = struct {
             const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{s}", .{ packages_json.len, packages_json });
             defer self.allocator.free(response);
 
-            try stream.writeAll(response);
+            try compat.streamWriteAll(stream, self.io,response);
         } else {
             // Handle specific package requests
             try self.serve404(stream);
         }
     }
 
-    fn handleSearchApi(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handleSearchApi(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Extract query parameter
         const query_start = std.mem.indexOf(u8, path, "q=") orelse {
             try self.serveEmptySearch(stream);
@@ -1121,19 +1167,19 @@ pub const Server = struct {
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{s}", .{ search_json.len, search_json });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn serveEmptySearch(self: *Server, stream: std.net.Stream) !void {
+    fn serveEmptySearch(self: *Server, stream: std.Io.net.Stream) !void {
         const search_json = "{\"results\":[],\"total\":0,\"query\":\"\"}";
 
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{s}", .{ search_json.len, search_json });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn handlePublishPackage(self: *Server, stream: std.net.Stream) !void {
+    fn handlePublishPackage(self: *Server, stream: std.Io.net.Stream) !void {
         const response_json =
             \\{
             \\  "success": true,
@@ -1144,26 +1190,26 @@ pub const Server = struct {
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{s}", .{ response_json.len, response_json });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn serve404(self: *Server, stream: std.net.Stream) !void {
+    fn serve404(self: *Server, stream: std.Io.net.Stream) !void {
         const content = "404 Not Found";
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{s}", .{ content.len, content });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn serveMethodNotAllowed(self: *Server, stream: std.net.Stream) !void {
+    fn serveMethodNotAllowed(self: *Server, stream: std.Io.net.Stream) !void {
         const content = "405 Method Not Allowed";
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{s}", .{ content.len, content });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn handleZigistryDiscover(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handleZigistryDiscover(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse query parameter
         var query: []const u8 = "";
         if (std.mem.indexOf(u8, path, "?q=")) |idx| {
@@ -1235,10 +1281,10 @@ pub const Server = struct {
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{s}", .{ json_response.len, json_response });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn handleZigistryTrending(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handleZigistryTrending(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         _ = path; // unused
         const packages = try self.zigistry.getTrending(null, 20);
         defer {
@@ -1304,10 +1350,10 @@ pub const Server = struct {
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{s}", .{ json_response.len, json_response });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn handleZigistryBrowse(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handleZigistryBrowse(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse category parameter
         var category: []const u8 = "all";
         if (std.mem.indexOf(u8, path, "?category=")) |idx| {
@@ -1381,7 +1427,7 @@ pub const Server = struct {
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{s}", .{ json_response.len, json_response });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
     // GitHub-compatible API v1 handlers
@@ -1389,7 +1435,7 @@ pub const Server = struct {
     // GET /api/v1/packages/{owner}/{repo}/releases
     // GET /api/v1/packages/{owner}/{repo}/releases/{tag}
     // GET /api/v1/packages/{owner}/{repo}/tags
-    fn handlePackageApiV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handlePackageApiV1(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse path: /api/v1/packages/{owner}/{repo}/...
         const prefix = "/api/v1/packages/";
         if (!std.mem.startsWith(u8, path, prefix)) {
@@ -1426,7 +1472,7 @@ pub const Server = struct {
         }
     }
 
-    fn handleGetPackageV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8) !void {
+    fn handleGetPackageV1(self: *Server, stream: std.Io.net.Stream, owner: []const u8, repo: []const u8) !void {
         const package = try self.database.getPackageGitHub(owner, repo);
         if (package == null) {
             try self.serveJsonError(stream, 404, "Package not found");
@@ -1485,7 +1531,7 @@ pub const Server = struct {
         try self.serveJson(stream, 200, json_response);
     }
 
-    fn handleGetReleasesV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8) !void {
+    fn handleGetReleasesV1(self: *Server, stream: std.Io.net.Stream, owner: []const u8, repo: []const u8) !void {
         const releases = try self.database.getReleases(owner, repo);
         defer {
             for (releases) |release| {
@@ -1553,7 +1599,7 @@ pub const Server = struct {
         try self.serveJson(stream, 200, json_response);
     }
 
-    fn handleGetReleaseV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8, tag: []const u8) !void {
+    fn handleGetReleaseV1(self: *Server, stream: std.Io.net.Stream, owner: []const u8, repo: []const u8, tag: []const u8) !void {
         const release = try self.database.getRelease(owner, repo, tag);
         if (release == null) {
             try self.serveJsonError(stream, 404, "Release not found");
@@ -1610,7 +1656,7 @@ pub const Server = struct {
         try self.serveJson(stream, 200, json_response);
     }
 
-    fn handleGetTagsV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8) !void {
+    fn handleGetTagsV1(self: *Server, stream: std.Io.net.Stream, owner: []const u8, repo: []const u8) !void {
         const releases = try self.database.getReleases(owner, repo);
         defer {
             for (releases) |release| {
@@ -1662,7 +1708,7 @@ pub const Server = struct {
         try self.serveJson(stream, 200, json_response);
     }
 
-    fn handleDownloadPackageV1(self: *Server, stream: std.net.Stream, owner: []const u8, repo: []const u8, version: []const u8) !void {
+    fn handleDownloadPackageV1(self: *Server, stream: std.Io.net.Stream, owner: []const u8, repo: []const u8, version: []const u8) !void {
         // Parse version
         const parsed_version = types.Version.parse(version) catch {
             try self.serveJsonError(stream, 400, "Invalid version format");
@@ -1716,8 +1762,8 @@ pub const Server = struct {
         , .{ filename, package_data.len });
         defer self.allocator.free(response_header);
 
-        try stream.writeAll(response_header);
-        try stream.writeAll(package_data);
+        try compat.streamWriteAll(stream, self.io,response_header);
+        try compat.streamWriteAll(stream, self.io,package_data);
 
         std.debug.print("📥 Package downloaded: {s}/{s}@{s} ({d} bytes)\n", .{ 
             owner, repo, version, package_data.len 
@@ -1725,7 +1771,7 @@ pub const Server = struct {
     }
 
     // GET /api/v1/search?q=query&limit=20
-    fn handleSearchApiV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handleSearchApiV1(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse query parameters
         var query: []const u8 = "";
         var limit: u32 = 20;
@@ -1815,7 +1861,7 @@ pub const Server = struct {
     }
 
     // GET /api/v1/resolve/{short_name}
-    fn handleResolveApiV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handleResolveApiV1(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         const prefix = "/api/v1/resolve/";
         if (!std.mem.startsWith(u8, path, prefix)) {
             return self.serve404(stream);
@@ -1865,7 +1911,7 @@ pub const Server = struct {
     }
 
     // GET /api/v1/registry/config
-    fn handleRegistryConfigV1(self: *Server, stream: std.net.Stream) !void {
+    fn handleRegistryConfigV1(self: *Server, stream: std.Io.net.Stream) !void {
         const registry_name = try self.database.getRegistryConfig("registry_name") orelse try self.allocator.dupe(u8, "Zepplin Registry");
         defer self.allocator.free(registry_name);
 
@@ -1909,7 +1955,7 @@ pub const Server = struct {
     }
 
     // GET /api/v1/health
-    fn handleHealthV1(self: *Server, stream: std.net.Stream) !void {
+    fn handleHealthV1(self: *Server, stream: std.Io.net.Stream) !void {
         const json_response = try std.fmt.allocPrint(self.allocator,
             \\{{
             \\  "status": "ok",
@@ -1921,14 +1967,14 @@ pub const Server = struct {
             \\    "zigistry_integration": true
             \\  }}
             \\}}
-        , .{std.time.timestamp()});
+        , .{compat.timestamp()});
         defer self.allocator.free(json_response);
 
         try self.serveJson(stream, 200, json_response);
     }
 
     // POST /api/v1/packages/{owner}/{repo}/releases
-    fn handlePublishPackageV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handlePublishPackageV1(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse path to extract owner and repo
         const prefix = "/api/v1/packages/";
         if (!std.mem.startsWith(u8, path, prefix)) {
@@ -1948,7 +1994,9 @@ pub const Server = struct {
 
         // Read the full request
         var buffer: [50 * 1024 * 1024]u8 = undefined; // 50MB max upload
-        const bytes_read = try stream.read(&buffer);
+        var read_buf: [8192]u8 = undefined;
+        var reader = stream.reader(self.io, &read_buf);
+        const bytes_read = reader.interface.readSliceShort(&buffer) catch 0;
         const request = buffer[0..bytes_read];
 
         // Find the body after headers
@@ -2046,14 +2094,14 @@ pub const Server = struct {
             \\  "sha256": "{s}"
             \\}}
         , .{
-            std.time.timestamp(), // Using timestamp as ID for now
+            compat.timestamp(), // Using timestamp as ID for now
             upload_data.tag_name,
             upload_data.name orelse upload_data.tag_name,
             upload_data.body orelse "",
             if (upload_data.draft) "true" else "false",
             if (upload_data.prerelease) "true" else "false",
-            std.time.timestamp(),
-            std.time.timestamp(),
+            compat.timestamp(),
+            compat.timestamp(),
             download_url,
             package_file.file_size,
             package_file.checksum,
@@ -2068,7 +2116,7 @@ pub const Server = struct {
     }
 
     // PUT /api/v1/aliases/{short_name}
-    fn handleCreateAliasV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handleCreateAliasV1(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         const prefix = "/api/v1/aliases/";
         if (!std.mem.startsWith(u8, path, prefix)) {
             return self.serve404(stream);
@@ -2095,7 +2143,7 @@ pub const Server = struct {
     }
 
     // DELETE /api/v1/packages/{owner}/{repo}/releases/{tag}
-    fn handleDeletePackageV1(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handleDeletePackageV1(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse path
         const prefix = "/api/v1/packages/";
         if (!std.mem.startsWith(u8, path, prefix)) {
@@ -2130,14 +2178,13 @@ pub const Server = struct {
     }
 
     // Simple health check endpoint for Docker/nginx
-    fn handleHealthSimple(self: *Server, stream: std.net.Stream) !void {
-        _ = self;
+    fn handleHealthSimple(self: *Server, stream: std.Io.net.Stream) !void {
         const response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nOK";
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io, response);
     }
 
     // Helper methods
-    fn serveJson(self: *Server, stream: std.net.Stream, status_code: u16, json_content: []const u8) !void {
+    fn serveJson(self: *Server, stream: std.Io.net.Stream, status_code: u16, json_content: []const u8) !void {
         const status_text = switch (status_code) {
             200 => "OK",
             201 => "Created",
@@ -2152,10 +2199,10 @@ pub const Server = struct {
         const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 {d} {s}\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {d}\r\n\r\n{s}", .{ status_code, status_text, json_content.len, json_content });
         defer self.allocator.free(response);
 
-        try stream.writeAll(response);
+        try compat.streamWriteAll(stream, self.io,response);
     }
 
-    fn serveJsonError(self: *Server, stream: std.net.Stream, status_code: u16, message: []const u8) !void {
+    fn serveJsonError(self: *Server, stream: std.Io.net.Stream, status_code: u16, message: []const u8) !void {
         const json_response = try std.fmt.allocPrint(self.allocator,
             \\{{
             \\  "message": "{s}",
@@ -2167,7 +2214,7 @@ pub const Server = struct {
         try self.serveJson(stream, status_code, json_response);
     }
 
-    fn handleStatsApi(self: *Server, stream: std.net.Stream) !void {
+    fn handleStatsApi(self: *Server, stream: std.Io.net.Stream) !void {
         const stats = try self.database.getDownloadStats();
         
         const json_response = try std.fmt.allocPrint(self.allocator,
@@ -2201,9 +2248,11 @@ pub const Server = struct {
         return json.toOwnedSlice();
     }
 
-    fn handleRegister(self: *Server, stream: std.net.Stream) !void {
+    fn handleRegister(self: *Server, stream: std.Io.net.Stream) !void {
         var buffer: [8192]u8 = undefined;
-        const bytes_read = try stream.read(&buffer);
+        var read_buf: [4096]u8 = undefined;
+        var reader = stream.reader(self.io, &read_buf);
+        const bytes_read = reader.interface.readSliceShort(&buffer) catch 0;
         const request = buffer[0..bytes_read];
         
         // Find the body after headers
@@ -2278,7 +2327,7 @@ pub const Server = struct {
         try self.serveJson(stream, 201, json_response);
     }
     
-    fn handleLogin(self: *Server, stream: std.net.Stream) !void {
+    fn handleLogin(self: *Server, stream: std.Io.net.Stream) !void {
         // TODO: Implement proper login after User type is defined
         try self.serveJsonError(stream, 501, "Login not implemented yet");
     }
@@ -2317,7 +2366,7 @@ pub const Server = struct {
         };
     }
     
-    fn requireAuth(self: *Server, stream: std.net.Stream, request: []const u8) !?AuthenticatedUser {
+    fn requireAuth(self: *Server, stream: std.Io.net.Stream, request: []const u8) !?AuthenticatedUser {
         const user = self.validateAuthToken(request) catch {
             try self.serveJsonError(stream, 401, "Invalid or expired token");
             return null;
@@ -2331,7 +2380,7 @@ pub const Server = struct {
         return user;
     }
     
-    fn handleLogout(self: *Server, stream: std.net.Stream, request: []const u8) !void {
+    fn handleLogout(self: *Server, stream: std.Io.net.Stream, request: []const u8) !void {
         // For now, logout is just a client-side operation since we're using stateless JWT-like tokens
         // In a full implementation, you might want to maintain a blacklist of revoked tokens
         _ = request; // Suppress unused parameter warning
@@ -2345,7 +2394,7 @@ pub const Server = struct {
         try self.serveJson(stream, 200, json_response);
     }
     
-    fn handleUserProfile(self: *Server, stream: std.net.Stream, request: []const u8) !void {
+    fn handleUserProfile(self: *Server, stream: std.Io.net.Stream, request: []const u8) !void {
         const user = try self.requireAuth(stream, request);
         if (user == null) return; // Error already sent by requireAuth
         
@@ -2484,7 +2533,7 @@ pub const Server = struct {
     }
 
     // Ziglibs API handlers
-    fn handleZiglibsSync(self: *Server, stream: std.net.Stream, request: []const u8) !void {
+    fn handleZiglibsSync(self: *Server, stream: std.Io.net.Stream, request: []const u8) !void {
         // Check authentication
         const user = try self.requireAuth(stream, request);
         if (user == null) return; // Error already sent by requireAuth
@@ -2512,7 +2561,7 @@ pub const Server = struct {
         try self.serveJson(stream, 200, response);
     }
 
-    fn handleZiglibsPackages(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handleZiglibsPackages(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse query parameters for pagination
         var limit: ?usize = 50;
         var offset: ?usize = 0;
@@ -2598,7 +2647,7 @@ pub const Server = struct {
     }
 
     // build.zig.zon integration endpoints
-    fn handlePackageZon(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handlePackageZon(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse /api/packages/{name}/zon
         const prefix = "/api/packages/";
         const suffix = "/zon";
@@ -2637,10 +2686,10 @@ pub const Server = struct {
         );
         defer self.allocator.free(full_response);
         
-        _ = try stream.write(full_response);
+        try compat.streamWriteAll(stream, self.io, full_response);
     }
-    
-    fn handlePackageTarball(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+
+    fn handlePackageTarball(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse /api/packages/{name}/tarball/{version}
         const prefix = "/api/packages/";
         const tarball_marker = "/tarball/";
@@ -2669,10 +2718,10 @@ pub const Server = struct {
         );
         defer self.allocator.free(response);
         
-        _ = try stream.write(response);
+        try compat.streamWriteAll(stream, self.io, response);
     }
     
-    fn handlePackageHash(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handlePackageHash(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse /api/packages/{name}/hash/{version}
         const prefix = "/api/packages/";
         const hash_marker = "/hash/";
@@ -2702,10 +2751,10 @@ pub const Server = struct {
         );
         defer self.allocator.free(response);
         
-        _ = try stream.write(response);
+        try compat.streamWriteAll(stream, self.io, response);
     }
     
-    fn handleDependencyResolve(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8) !void {
+    fn handleDependencyResolve(self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8) !void {
         _ = path;
         
         // Parse the POST body to get dependency requirements
@@ -2740,9 +2789,9 @@ pub const Server = struct {
     // OAuth/OIDC Authentication Handlers
     const unified_auth = @import("../auth/unified_auth.zig");
     
-    fn handleMicrosoftLogin(self: *Server, stream: std.net.Stream) !void {
+    fn handleMicrosoftLogin(self: *Server, stream: std.Io.net.Stream) !void {
         // Initialize unified auth system
-        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator) catch {
+        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator, self.io, self.environ_map) catch {
             return self.serveJsonError(stream, 500, "Authentication system not configured");
         };
         defer auth_system.deinit();
@@ -2762,10 +2811,10 @@ pub const Server = struct {
         );
         defer self.allocator.free(redirect_response);
         
-        _ = try stream.write(redirect_response);
+        try compat.streamWriteAll(stream, self.io, redirect_response);
     }
     
-    fn handleMicrosoftCallback(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8) !void {
+    fn handleMicrosoftCallback(self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8) !void {
         _ = request; // Microsoft OIDC doesn't need cookie-based state validation
         
         // Parse the authorization code from query parameters
@@ -2806,7 +2855,7 @@ pub const Server = struct {
         }
         
         // Initialize unified auth system
-        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator) catch {
+        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator, self.io, self.environ_map) catch {
             return self.serveJsonError(stream, 500, "Authentication system not configured");
         };
         defer auth_system.deinit();
@@ -2864,12 +2913,12 @@ pub const Server = struct {
         );
         defer self.allocator.free(success_response);
         
-        _ = try stream.write(success_response);
+        try compat.streamWriteAll(stream, self.io, success_response);
     }
     
-    fn handleGitHubLogin(self: *Server, stream: std.net.Stream) !void {
+    fn handleGitHubLogin(self: *Server, stream: std.Io.net.Stream) !void {
         // Initialize unified auth system
-        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator) catch {
+        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator, self.io, self.environ_map) catch {
             return self.serveJsonError(stream, 500, "Authentication system not configured");
         };
         defer auth_system.deinit();
@@ -2882,7 +2931,7 @@ pub const Server = struct {
         
         // Generate random state parameter for CSRF protection
         var state_bytes: [16]u8 = undefined;
-        std.crypto.random.bytes(&state_bytes);
+        compat.cryptoRandomBytes(&state_bytes);
         const state = try std.fmt.allocPrint(self.allocator, "{s}", .{std.fmt.bytesToHex(&state_bytes, .lower)});
         defer self.allocator.free(state);
         
@@ -2896,10 +2945,10 @@ pub const Server = struct {
         );
         defer self.allocator.free(redirect_response);
         
-        _ = try stream.write(redirect_response);
+        try compat.streamWriteAll(stream, self.io, redirect_response);
     }
     
-    fn handleGitHubCallback(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8) !void {
+    fn handleGitHubCallback(self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8) !void {
         
         // Parse the authorization code from query parameters
         const query_start = std.mem.indexOf(u8, path, "?") orelse {
@@ -2966,7 +3015,7 @@ pub const Server = struct {
         }
         
         // Initialize unified auth system
-        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator) catch {
+        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator, self.io, self.environ_map) catch {
             return self.serveJsonError(stream, 500, "Authentication system not configured");
         };
         defer auth_system.deinit();
@@ -3021,11 +3070,11 @@ pub const Server = struct {
         );
         defer self.allocator.free(success_response);
         
-        _ = try stream.write(success_response);
+        try compat.streamWriteAll(stream, self.io, success_response);
     }
     
     // Comment API handlers
-    fn handleCommentsApiV1(self: *Server, stream: std.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+    fn handleCommentsApiV1(self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
         _ = request_allocator;
         
         // Parse HTTP method
@@ -3177,7 +3226,7 @@ pub const Server = struct {
         }
     }
     
-    fn handlePackagePage(self: *Server, stream: std.net.Stream, path: []const u8) !void {
+    fn handlePackagePage(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
         // Parse package path: /packages/{owner}/{repo}
         const path_after_packages = path[10..]; // Skip "/packages/"
         var path_parts = std.mem.splitSequence(u8, path_after_packages, "/");
@@ -3317,6 +3366,6 @@ pub const Server = struct {
         );
         defer self.allocator.free(response);
         
-        _ = try stream.write(response);
+        try compat.streamWriteAll(stream, self.io, response);
     }
 };

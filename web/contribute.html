@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contributing - Zepplin Registry</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .docs-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .docs-header {
+            margin-bottom: 3rem;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: 2rem;
+        }
+        .docs-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--lightning-400);
+            margin-bottom: 0.5rem;
+        }
+        .docs-subtitle {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+        }
+        .docs-content h2 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 2rem 0 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-subtle);
+        }
+        .docs-content h2:first-child {
+            border-top: none;
+            padding-top: 0;
+            margin-top: 0;
+        }
+        .docs-content h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 1.5rem 0 0.75rem;
+        }
+        .docs-content p {
+            color: var(--text-secondary);
+            line-height: 1.8;
+            margin-bottom: 1rem;
+        }
+        .docs-content ul, .docs-content ol {
+            color: var(--text-secondary);
+            line-height: 1.8;
+            margin-bottom: 1rem;
+            padding-left: 1.5rem;
+        }
+        .docs-content li {
+            margin-bottom: 0.5rem;
+        }
+        .code-block {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.5rem;
+            padding: 1rem 1.25rem;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        .code-block code {
+            color: var(--text-primary);
+        }
+        .code-block .comment {
+            color: var(--text-muted);
+        }
+        .inline-code {
+            background: var(--bg-tertiary);
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            font-size: 0.9em;
+            color: var(--lightning-400);
+        }
+        .nav-breadcrumb {
+            margin-bottom: 2rem;
+        }
+        .nav-breadcrumb a {
+            color: var(--text-muted);
+            text-decoration: none;
+        }
+        .nav-breadcrumb a:hover {
+            color: var(--lightning-400);
+        }
+        .nav-breadcrumb span {
+            color: var(--text-muted);
+            margin: 0 0.5rem;
+        }
+        .contrib-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-subtle);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .contrib-card h4 {
+            color: var(--lightning-400);
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+        .contrib-card p {
+            margin-bottom: 0;
+        }
+        .contrib-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        .note-box {
+            background: rgba(255, 214, 10, 0.1);
+            border: 1px solid var(--lightning-400);
+            border-radius: 0.5rem;
+            padding: 1rem 1.25rem;
+            margin: 1.5rem 0;
+        }
+        .note-box-title {
+            font-weight: 600;
+            color: var(--lightning-400);
+            margin-bottom: 0.5rem;
+        }
+        .note-box p {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-logo">
+                <img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img">
+                <span>Zepplin</span>
+            </a>
+            <div class="nav-links">
+                <a href="/packages" class="nav-link">Packages</a>
+                <a href="/docs" class="nav-link active">Docs</a>
+                <a href="/publish" class="nav-link">Publish</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="docs-container">
+        <nav class="nav-breadcrumb">
+            <a href="/">Home</a>
+            <span>/</span>
+            <a href="/docs">Documentation</a>
+            <span>/</span>
+            <span style="color: var(--text-primary);">Contributing</span>
+        </nav>
+
+        <header class="docs-header">
+            <h1 class="docs-title">Contributing to Zepplin</h1>
+            <p class="docs-subtitle">Help build the future of Zig package management</p>
+        </header>
+
+        <div class="docs-content">
+            <h2>Ways to Contribute</h2>
+            <div class="contrib-grid">
+                <div class="contrib-card">
+                    <h4>Report Bugs</h4>
+                    <p>Found an issue? Open a GitHub issue with reproduction steps and we'll investigate.</p>
+                </div>
+                <div class="contrib-card">
+                    <h4>Submit Packages</h4>
+                    <p>Share your Zig libraries and tools with the community through the registry.</p>
+                </div>
+                <div class="contrib-card">
+                    <h4>Improve Docs</h4>
+                    <p>Help improve documentation, add examples, or fix typos.</p>
+                </div>
+                <div class="contrib-card">
+                    <h4>Write Code</h4>
+                    <p>Fix bugs, implement features, or improve performance.</p>
+                </div>
+            </div>
+
+            <h2>Development Setup</h2>
+            <h3>Prerequisites</h3>
+            <ul>
+                <li><strong>Zig 0.16.0+</strong> - Required for building Zepplin</li>
+                <li><strong>Git</strong> - For cloning and version control</li>
+                <li><strong>SQLite</strong> - Database backend (via zqlite)</li>
+            </ul>
+
+            <h3>Clone and Build</h3>
+            <div class="code-block">
+<code><span class="comment"># Clone the repository</span>
+git clone https://github.com/ckgxrg-salt/zepplin.git
+cd zepplin
+
+<span class="comment"># Build the project</span>
+zig build
+
+<span class="comment"># Run tests</span>
+zig build test
+
+<span class="comment"># Start the development server</span>
+./zig-out/bin/zepplin serve 8080</code>
+            </div>
+
+            <h3>Project Structure</h3>
+            <div class="code-block">
+<code>zepplin/
+├── src/
+│   ├── main.zig          <span class="comment"># Entry point</span>
+│   ├── cli/              <span class="comment"># CLI commands</span>
+│   ├── server/           <span class="comment"># HTTP server</span>
+│   ├── database/         <span class="comment"># Database layer</span>
+│   ├── auth/             <span class="comment"># Authentication</span>
+│   ├── storage/          <span class="comment"># Package storage</span>
+│   └── zigistry/         <span class="comment"># Zigistry client</span>
+├── web/                  <span class="comment"># Static web files</span>
+├── docs/                 <span class="comment"># Documentation</span>
+└── build.zig             <span class="comment"># Build configuration</span></code>
+            </div>
+
+            <h2>Submitting Changes</h2>
+            <h3>Pull Request Process</h3>
+            <ol>
+                <li><strong>Fork</strong> the repository on GitHub</li>
+                <li><strong>Create a branch</strong> for your changes: <code class="inline-code">git checkout -b feature/my-feature</code></li>
+                <li><strong>Make changes</strong> following our code style</li>
+                <li><strong>Test</strong> your changes: <code class="inline-code">zig build test</code></li>
+                <li><strong>Commit</strong> with clear, descriptive messages</li>
+                <li><strong>Push</strong> to your fork and open a Pull Request</li>
+            </ol>
+
+            <h3>Code Style</h3>
+            <ul>
+                <li>Follow Zig's standard style guidelines</li>
+                <li>Use <code class="inline-code">zig fmt</code> to format code before committing</li>
+                <li>Write tests for new functionality</li>
+                <li>Keep commits focused and atomic</li>
+                <li>Write clear commit messages explaining the "why"</li>
+            </ul>
+
+            <div class="note-box">
+                <div class="note-box-title">Commit Message Format</div>
+                <p>Use conventional commits when possible:</p>
+                <div class="code-block" style="margin-top: 0.5rem; margin-bottom: 0;">
+<code>feat: add package search filtering
+fix: resolve authentication timeout issue
+docs: update CLI reference for new commands
+refactor: simplify database connection handling</code>
+                </div>
+            </div>
+
+            <h2>Reporting Issues</h2>
+            <p>When reporting bugs, please include:</p>
+            <ul>
+                <li>Zig version (<code class="inline-code">zig version</code>)</li>
+                <li>Operating system and architecture</li>
+                <li>Steps to reproduce the issue</li>
+                <li>Expected vs actual behavior</li>
+                <li>Relevant error messages or logs</li>
+            </ul>
+
+            <h2>Community</h2>
+            <ul>
+                <li><a href="https://github.com/ckgxrg-salt/zepplin" style="color: var(--lightning-400);">GitHub Repository</a> - Source code and issue tracker</li>
+                <li><a href="https://github.com/ckgxrg-salt/zepplin/discussions" style="color: var(--lightning-400);">GitHub Discussions</a> - Questions and ideas</li>
+            </ul>
+
+            <h2>License</h2>
+            <p>
+                Zepplin is released under the MIT License. By contributing, you agree that your
+                contributions will be licensed under the same license.
+            </p>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>Zepplin</h4>
+                <p>A modern package registry for the Zig ecosystem</p>
+            </div>
+            <div class="footer-section">
+                <h4>Documentation</h4>
+                <ul>
+                    <li><a href="/docs/getting-started">Getting Started</a></li>
+                    <li><a href="/docs/api">API Reference</a></li>
+                    <li><a href="/docs/cli">CLI Usage</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Community</h4>
+                <ul>
+                    <li><a href="https://github.com/ckgxrg-salt/zepplin">GitHub</a></li>
+                    <li><a href="/docs/contribute">Contributing</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>Built with Zig. Powered by Zepplin.</p>
+        </div>
+    </footer>
+</body>
+</html>

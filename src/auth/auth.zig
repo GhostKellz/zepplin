@@ -1,5 +1,6 @@
 const std = @import("std");
 const crypto = std.crypto;
+const compat = @import("../common/compat.zig");
 
 pub const AuthError = error{
     InvalidToken,
@@ -15,25 +16,27 @@ pub const AuthToken = struct {
     expires_at: i64,
 
     pub fn isValid(self: AuthToken) bool {
-        const now = std.time.timestamp();
+        const now = compat.timestamp();
         return now < self.expires_at;
     }
 };
 
 pub const Auth = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     secret_key: []const u8,
 
-    pub fn init(allocator: std.mem.Allocator, secret_key: []const u8) Auth {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, secret_key: []const u8) Auth {
         return Auth{
             .allocator = allocator,
+            .io = io,
             .secret_key = secret_key,
         };
     }
 
     pub fn hashPassword(self: *Auth, password: []const u8) ![]u8 {
         var salt: [16]u8 = undefined;
-        crypto.random.bytes(&salt);
+        compat.cryptoRandomBytes(&salt);
 
         var hash: [32]u8 = undefined;
         try crypto.pwhash.argon2.kdf(
@@ -43,6 +46,7 @@ pub const Auth = struct {
             &salt,
             .{ .t = 3, .m = 65536, .p = 1 },
             .argon2id,
+            self.io,
         );
 
         // Combine salt and hash for storage
@@ -73,7 +77,7 @@ pub const Auth = struct {
     }
 
     pub fn generateApiToken(self: *Auth, user_id: i64) ![]u8 {
-        const now = std.time.timestamp();
+        const now = compat.timestamp();
         const expires_at = now + (30 * 24 * 60 * 60); // 30 days
 
         // Create token payload

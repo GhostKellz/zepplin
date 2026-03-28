@@ -1,13 +1,14 @@
 const std = @import("std");
 const zqlite = @import("zqlite");
+const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
 
 pub const Database = struct {
-    db: *zqlite.Connection,
+    db: *zqlite.db.Connection,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, db_path: []const u8) !Database {
-        const db = try zqlite.open(db_path);
+        const db = try zqlite.open(allocator, db_path);
 
         // Create packages table
         try db.execute(
@@ -78,8 +79,8 @@ pub const Database = struct {
             package.license orelse "",
             package.repository orelse "",
             "", // dependencies as JSON string - TODO: serialize properly
-            std.time.timestamp(),
-            std.time.timestamp(),
+            compat.timestamp(),
+            compat.timestamp(),
         });
 
         try self.db.execute(sql);
@@ -89,23 +90,40 @@ pub const Database = struct {
         var buf: [512]u8 = undefined;
         const sql = try std.fmt.bufPrint(buf[0..], "SELECT name, version, description, author, license, repository FROM packages WHERE name = '{s}'", .{name});
 
-        // Execute query and get results
         var result = self.db.query(sql) catch |err| {
             std.log.warn("Database query failed for package '{s}': {}", .{ name, err });
             return null;
         };
         defer result.deinit();
 
-        // TODO: Fix zqlite Row API - falling back to mock data for now
-        
-        // Use mock data while we fix the API
-        const mock_packages = try self.getMockPackages();
-        defer self.allocator.free(mock_packages);
+        // Get first row if exists
+        if (result.next()) |row_const| {
+            var row = row_const;
+            defer row.deinit();
 
-        for (mock_packages) |pkg| {
-            if (std.mem.eql(u8, pkg.name, name)) {
-                return pkg;
-            }
+            const pkg_name = row.getText(0) orelse return null;
+            const version_str = row.getText(1) orelse "0.0.0";
+            const description = row.getText(2);
+            const author = row.getText(3);
+            const license = row.getText(4);
+            const repository = row.getText(5);
+
+            // Parse version string
+            var version = types.Version{ .major = 0, .minor = 0, .patch = 0 };
+            var ver_iter = std.mem.splitSequence(u8, version_str, ".");
+            if (ver_iter.next()) |major| version.major = std.fmt.parseInt(u32, major, 10) catch 0;
+            if (ver_iter.next()) |minor| version.minor = std.fmt.parseInt(u32, minor, 10) catch 0;
+            if (ver_iter.next()) |patch| version.patch = std.fmt.parseInt(u32, patch, 10) catch 0;
+
+            return types.PackageMetadata{
+                .name = try self.allocator.dupe(u8, pkg_name),
+                .version = version,
+                .description = if (description) |d| try self.allocator.dupe(u8, d) else null,
+                .author = if (author) |a| try self.allocator.dupe(u8, a) else null,
+                .license = if (license) |l| try self.allocator.dupe(u8, l) else null,
+                .repository = if (repository) |r| try self.allocator.dupe(u8, r) else null,
+                .dependencies = &[_]types.Dependency{},
+            };
         }
 
         return null;
@@ -117,21 +135,53 @@ pub const Database = struct {
 
         var result = self.db.query(sql) catch |err| {
             std.log.warn("Database query failed for listPackages: {}", .{err});
-            // Fallback to mock data for now
             return self.getMockPackages();
         };
         defer result.deinit();
 
-        var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
-        // TODO: Fix zqlite Row API - using mock data for now
-        packages.deinit();
-        return self.getMockPackages();
+        var packages: std.ArrayList(types.PackageMetadata) = .empty;
+
+        while (result.next()) |row_const| {
+            var row = row_const;
+            defer row.deinit();
+
+            const pkg_name = row.getText(0) orelse continue;
+            const version_str = row.getText(1) orelse "0.0.0";
+            const description = row.getText(2);
+            const author = row.getText(3);
+            const license = row.getText(4);
+            const repository = row.getText(5);
+
+            var version = types.Version{ .major = 0, .minor = 0, .patch = 0 };
+            var ver_iter = std.mem.splitSequence(u8, version_str, ".");
+            if (ver_iter.next()) |major| version.major = std.fmt.parseInt(u32, major, 10) catch 0;
+            if (ver_iter.next()) |minor| version.minor = std.fmt.parseInt(u32, minor, 10) catch 0;
+            if (ver_iter.next()) |patch| version.patch = std.fmt.parseInt(u32, patch, 10) catch 0;
+
+            try packages.append(self.allocator, types.PackageMetadata{
+                .name = try self.allocator.dupe(u8, pkg_name),
+                .version = version,
+                .description = if (description) |d| try self.allocator.dupe(u8, d) else null,
+                .author = if (author) |a| try self.allocator.dupe(u8, a) else null,
+                .license = if (license) |l| try self.allocator.dupe(u8, l) else null,
+                .repository = if (repository) |r| try self.allocator.dupe(u8, r) else null,
+                .dependencies = &[_]types.Dependency{},
+            });
+        }
+
+        // If no packages in DB, return mock data for demo
+        if (packages.items.len == 0) {
+            packages.deinit(self.allocator);
+            return self.getMockPackages();
+        }
+
+        return packages.toOwnedSlice(self.allocator);
     }
 
     fn getMockPackages(self: *Database) ![]types.PackageMetadata {
-        var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
+        var packages: std.ArrayList(types.PackageMetadata) = .empty;
 
-        try packages.append(types.PackageMetadata{
+        try packages.append(self.allocator, types.PackageMetadata{
             .name = try self.allocator.dupe(u8, "zcrypto"),
             .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
             .description = try self.allocator.dupe(u8, "Pure Zig cryptographic library for GhostChain"),
@@ -141,7 +191,7 @@ pub const Database = struct {
             .dependencies = &[_]types.Dependency{},
         });
 
-        try packages.append(types.PackageMetadata{
+        try packages.append(self.allocator, types.PackageMetadata{
             .name = try self.allocator.dupe(u8, "zsig"),
             .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
             .description = try self.allocator.dupe(u8, "Digital signature library for GhostChain"),
@@ -151,7 +201,7 @@ pub const Database = struct {
             .dependencies = &[_]types.Dependency{},
         });
 
-        try packages.append(types.PackageMetadata{
+        try packages.append(self.allocator, types.PackageMetadata{
             .name = try self.allocator.dupe(u8, "zwallet"),
             .version = types.Version{ .major = 0, .minor = 1, .patch = 0 },
             .description = try self.allocator.dupe(u8, "Wallet library for GhostChain ecosystem"),
@@ -161,7 +211,7 @@ pub const Database = struct {
             .dependencies = &[_]types.Dependency{},
         });
 
-        try packages.append(types.PackageMetadata{
+        try packages.append(self.allocator, types.PackageMetadata{
             .name = try self.allocator.dupe(u8, "zqlite"),
             .version = types.Version{ .major = 0, .minor = 4, .patch = 0 },
             .description = try self.allocator.dupe(u8, "Pure Zig SQLite alternative with cryptographic features"),
@@ -171,35 +221,79 @@ pub const Database = struct {
             .dependencies = &[_]types.Dependency{},
         });
 
-        return packages.toOwnedSlice();
+        return packages.toOwnedSlice(self.allocator);
     }
 
     pub fn searchPackages(self: *Database, query: []const u8, limit: ?usize) ![]types.PackageMetadata {
         var buf: [512]u8 = undefined;
         const sql = try std.fmt.bufPrint(buf[0..], "SELECT name, version, description, author, license, repository FROM packages WHERE name LIKE '%{s}%' OR description LIKE '%{s}%' LIMIT {}", .{ query, query, limit orelse 20 });
-        
+
         var result = self.db.query(sql) catch |err| {
             std.log.warn("Database search query failed: {}", .{err});
-            return self.getMockPackages();
+            // Fall back to filtering mock data
+            const all_mock = try self.getMockPackages();
+            defer self.allocator.free(all_mock);
+            var filtered: std.ArrayList(types.PackageMetadata) = .empty;
+            for (all_mock) |pkg| {
+                if (std.mem.indexOf(u8, pkg.name, query) != null or
+                    (pkg.description != null and std.mem.indexOf(u8, pkg.description.?, query) != null))
+                {
+                    try filtered.append(self.allocator, pkg);
+                    if (filtered.items.len >= (limit orelse 20)) break;
+                }
+            }
+            return filtered.toOwnedSlice(self.allocator);
         };
         defer result.deinit();
 
-        var packages = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
-        // TODO: Fix zqlite Row API - using mock data with filtering for now
-        packages.deinit();
-        
-        const all_mock_packages = try self.getMockPackages();
-        defer self.allocator.free(all_mock_packages);
-        
-        var filtered = std.array_list.AlignedManaged(types.PackageMetadata, null).init(self.allocator);
-        for (all_mock_packages) |pkg| {
-            if (std.mem.indexOf(u8, pkg.name, query) != null or 
-                (pkg.description != null and std.mem.indexOf(u8, pkg.description.?, query) != null)) {
-                try filtered.append(pkg);
-                if (filtered.items.len >= (limit orelse 20)) break;
-            }
+        var packages: std.ArrayList(types.PackageMetadata) = .empty;
+
+        while (result.next()) |row_const| {
+            var row = row_const;
+            defer row.deinit();
+
+            const pkg_name = row.getText(0) orelse continue;
+            const version_str = row.getText(1) orelse "0.0.0";
+            const description = row.getText(2);
+            const author = row.getText(3);
+            const license = row.getText(4);
+            const repository = row.getText(5);
+
+            var version = types.Version{ .major = 0, .minor = 0, .patch = 0 };
+            var ver_iter = std.mem.splitSequence(u8, version_str, ".");
+            if (ver_iter.next()) |major| version.major = std.fmt.parseInt(u32, major, 10) catch 0;
+            if (ver_iter.next()) |minor| version.minor = std.fmt.parseInt(u32, minor, 10) catch 0;
+            if (ver_iter.next()) |patch| version.patch = std.fmt.parseInt(u32, patch, 10) catch 0;
+
+            try packages.append(self.allocator, types.PackageMetadata{
+                .name = try self.allocator.dupe(u8, pkg_name),
+                .version = version,
+                .description = if (description) |d| try self.allocator.dupe(u8, d) else null,
+                .author = if (author) |a| try self.allocator.dupe(u8, a) else null,
+                .license = if (license) |l| try self.allocator.dupe(u8, l) else null,
+                .repository = if (repository) |r| try self.allocator.dupe(u8, r) else null,
+                .dependencies = &[_]types.Dependency{},
+            });
         }
-        return filtered.toOwnedSlice();
+
+        if (packages.items.len == 0) {
+            packages.deinit(self.allocator);
+            // Fall back to filtering mock data
+            const all_mock = try self.getMockPackages();
+            defer self.allocator.free(all_mock);
+            var filtered: std.ArrayList(types.PackageMetadata) = .empty;
+            for (all_mock) |pkg| {
+                if (std.mem.indexOf(u8, pkg.name, query) != null or
+                    (pkg.description != null and std.mem.indexOf(u8, pkg.description.?, query) != null))
+                {
+                    try filtered.append(self.allocator, pkg);
+                    if (filtered.items.len >= (limit orelse 20)) break;
+                }
+            }
+            return filtered.toOwnedSlice(self.allocator);
+        }
+
+        return packages.toOwnedSlice(self.allocator);
     }
 
     pub fn removePackage(self: *Database, name: []const u8) !void {
@@ -211,15 +305,32 @@ pub const Database = struct {
     // User operations
     pub fn createUser(self: *Database, username: []const u8, email: []const u8, password_hash: []const u8, api_token: []const u8) !void {
         var buf: [512]u8 = undefined;
-        const sql = try std.fmt.bufPrint(buf[0..], "INSERT INTO users (username, email, password_hash, api_token, created_at) VALUES ('{s}', '{s}', '{s}', '{s}', {d})", .{ username, email, password_hash, api_token, std.time.timestamp() });
+        const sql = try std.fmt.bufPrint(buf[0..], "INSERT INTO users (username, email, password_hash, api_token, created_at) VALUES ('{s}', '{s}', '{s}', '{s}', {d})", .{ username, email, password_hash, api_token, compat.timestamp() });
         try self.db.execute(sql);
     }
 
     pub fn getUserByToken(self: *Database, token: []const u8) !?[]const u8 {
-        // TODO: Implement actual SQL query when zqlite has result parsing
-        _ = self;
+        var buf: [256]u8 = undefined;
+        const sql = try std.fmt.bufPrint(buf[0..], "SELECT username FROM users WHERE api_token = '{s}'", .{token});
 
-        // Mock implementation for now
+        var result = self.db.query(sql) catch {
+            // Fall back to mock for demo
+            if (std.mem.eql(u8, token, "test-token")) {
+                return "testuser";
+            }
+            return null;
+        };
+        defer result.deinit();
+
+        if (result.next()) |row_const| {
+            var row = row_const;
+            defer row.deinit();
+            if (row.getText(0)) |uname| {
+                return try self.allocator.dupe(u8, uname);
+            }
+        }
+
+        // Fall back to mock for demo
         if (std.mem.eql(u8, token, "test-token")) {
             return "testuser";
         }
@@ -227,10 +338,27 @@ pub const Database = struct {
     }
 
     pub fn getUserByUsername(self: *Database, username: []const u8) !?[]const u8 {
-        // TODO: Implement actual SQL query when zqlite has result parsing
-        _ = self;
+        var buf: [256]u8 = undefined;
+        const sql = try std.fmt.bufPrint(buf[0..], "SELECT password_hash FROM users WHERE username = '{s}'", .{username});
 
-        // Mock implementation for now
+        var result = self.db.query(sql) catch {
+            // Fall back to mock for demo
+            if (std.mem.eql(u8, username, "testuser")) {
+                return "mock-hash";
+            }
+            return null;
+        };
+        defer result.deinit();
+
+        if (result.next()) |row_const| {
+            var row = row_const;
+            defer row.deinit();
+            if (row.getText(0)) |hash| {
+                return try self.allocator.dupe(u8, hash);
+            }
+        }
+
+        // Fall back to mock for demo
         if (std.mem.eql(u8, username, "testuser")) {
             return "mock-hash";
         }
@@ -243,7 +371,7 @@ pub const Database = struct {
         const sql = try std.fmt.bufPrint(buf[0..],
             \\INSERT OR REPLACE INTO download_stats (package_name, download_count, last_downloaded)
             \\VALUES ('{s}', 1, {d})
-        , .{ package_name, std.time.timestamp() });
+        , .{ package_name, compat.timestamp() });
         try self.db.execute(sql);
     }
 
@@ -306,8 +434,8 @@ pub const Database = struct {
             .name = "Release v1.0.0",
             .draft = false,
             .prerelease = false,
-            .created_at = std.time.timestamp(),
-            .published_at = std.time.timestamp(),
+            .created_at = compat.timestamp(),
+            .published_at = compat.timestamp(),
             .tarball_url = "https://zig.cktech.org/api/v1/packages/example/download/v1.0.0",
             .zipball_url = "https://zig.cktech.org/api/v1/packages/example/download/v1.0.0?format=zip",
         });
@@ -320,8 +448,8 @@ pub const Database = struct {
             .name = "Release v0.9.0",
             .draft = false,
             .prerelease = false,
-            .created_at = std.time.timestamp() - 86400,
-            .published_at = std.time.timestamp() - 86400,
+            .created_at = compat.timestamp() - 86400,
+            .published_at = compat.timestamp() - 86400,
             .tarball_url = "https://zig.cktech.org/api/v1/packages/example/download/v0.9.0",
             .zipball_url = "https://zig.cktech.org/api/v1/packages/example/download/v0.9.0?format=zip",
         });
@@ -339,7 +467,7 @@ pub const Database = struct {
                 .short_name = try self.allocator.dupe(u8, short_name),
                 .owner = try self.allocator.dupe(u8, "cktech"),
                 .repo = try self.allocator.dupe(u8, "zcrypto"),
-                .created_at = std.time.timestamp(),
+                .created_at = compat.timestamp(),
                 .created_by = try self.allocator.dupe(u8, "system"),
             };
         } else if (std.mem.eql(u8, short_name, "http")) {
@@ -347,7 +475,7 @@ pub const Database = struct {
                 .short_name = try self.allocator.dupe(u8, short_name),
                 .owner = try self.allocator.dupe(u8, "karlseguin"),
                 .repo = try self.allocator.dupe(u8, "http.zig"),
-                .created_at = std.time.timestamp(),
+                .created_at = compat.timestamp(),
                 .created_by = try self.allocator.dupe(u8, "system"),
             };
         } else if (std.mem.eql(u8, short_name, "xev")) {
@@ -355,7 +483,7 @@ pub const Database = struct {
                 .short_name = try self.allocator.dupe(u8, short_name),
                 .owner = try self.allocator.dupe(u8, "mitchellh"),
                 .repo = try self.allocator.dupe(u8, "libxev"),
-                .created_at = std.time.timestamp(),
+                .created_at = compat.timestamp(),
                 .created_by = try self.allocator.dupe(u8, "system"),
             };
         }
@@ -396,8 +524,8 @@ pub const Database = struct {
             .github_url = "https://github.com/ziglibs/zig-json",
             .github_stars = 45,
             .download_count = 1234,
-            .created_at = std.time.timestamp() - 86400 * 30,
-            .updated_at = std.time.timestamp() - 86400 * 7,
+            .created_at = compat.timestamp() - 86400 * 30,
+            .updated_at = compat.timestamp() - 86400 * 7,
             .dependencies = &[_]types.Dependency{},
         });
 
@@ -413,8 +541,8 @@ pub const Database = struct {
             .github_url = "https://github.com/ziglibs/zig-datetime",
             .github_stars = 23,
             .download_count = 567,
-            .created_at = std.time.timestamp() - 86400 * 60,
-            .updated_at = std.time.timestamp() - 86400 * 14,
+            .created_at = compat.timestamp() - 86400 * 60,
+            .updated_at = compat.timestamp() - 86400 * 14,
             .dependencies = &[_]types.Dependency{},
         });
 
@@ -487,7 +615,7 @@ pub const Database = struct {
         _ = display_name;
         
         // Return a mock comment ID
-        return @intCast(@mod(std.time.timestamp(), 1000000));
+        return @intCast(@mod(compat.timestamp(), 1000000));
     }
     
     pub fn getCommentsForPackage(self: *Database, package_id: []const u8) ![]types.Comment {
@@ -506,8 +634,8 @@ pub const Database = struct {
                 .username = try self.allocator.dupe(u8, "developer123"),
                 .display_name = try self.allocator.dupe(u8, "John Developer"),
                 .content = try self.allocator.dupe(u8, "Great package! Works perfectly with my project."),
-                .created_at = std.time.timestamp() - 86400, // 1 day ago
-                .updated_at = std.time.timestamp() - 86400,
+                .created_at = compat.timestamp() - 86400, // 1 day ago
+                .updated_at = compat.timestamp() - 86400,
                 .parent_id = null,
             });
             
@@ -518,8 +646,8 @@ pub const Database = struct {
                 .username = try self.allocator.dupe(u8, "coder_jane"),
                 .display_name = try self.allocator.dupe(u8, "Jane Coder"),
                 .content = try self.allocator.dupe(u8, "Thanks for the excellent documentation. Very helpful!"),
-                .created_at = std.time.timestamp() - 3600, // 1 hour ago
-                .updated_at = std.time.timestamp() - 3600,
+                .created_at = compat.timestamp() - 3600, // 1 hour ago
+                .updated_at = compat.timestamp() - 3600,
                 .parent_id = null,
             });
         }

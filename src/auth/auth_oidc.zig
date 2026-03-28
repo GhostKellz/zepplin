@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
 
 pub const OIDCProvider = enum {
@@ -16,14 +17,14 @@ pub const OIDCConfig = struct {
     authority: []const u8,
     scope: []const u8,
     
-    pub fn getMicrosoftConfig(allocator: std.mem.Allocator) !OIDCConfig {
-        const tenant_id = std.process.getEnvVarOwned(allocator, "AZURE_TENANT_ID") catch "common";
-        const client_id = std.process.getEnvVarOwned(allocator, "AZURE_CLIENT_ID") catch return error.MissingClientId;
-        const client_secret = std.process.getEnvVarOwned(allocator, "AZURE_CLIENT_SECRET") catch return error.MissingClientSecret;
-        
+    pub fn getMicrosoftConfig(allocator: std.mem.Allocator, environ_map: *std.process.Environ.Map) !OIDCConfig {
+        const tenant_id = environ_map.get("AZURE_TENANT_ID") orelse "common";
+        const client_id = environ_map.get("AZURE_CLIENT_ID") orelse return error.MissingClientId;
+        const client_secret = environ_map.get("AZURE_CLIENT_SECRET") orelse return error.MissingClientSecret;
+
         // Support both localhost and production URLs
-        const redirect_base = std.process.getEnvVarOwned(allocator, "REDIRECT_BASE_URL") catch "http://localhost:8888";
-        
+        const redirect_base = environ_map.get("REDIRECT_BASE_URL") orelse "http://localhost:8888";
+
         return OIDCConfig{
             .provider = .microsoft,
             .tenant_id = try allocator.dupe(u8, tenant_id),
@@ -58,11 +59,13 @@ pub const OIDCUserInfo = struct {
 
 pub const OIDCClient = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     config: OIDCConfig,
-    
-    pub fn init(allocator: std.mem.Allocator, config: OIDCConfig) OIDCClient {
+
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, config: OIDCConfig) OIDCClient {
         return .{
             .allocator = allocator,
+            .io = io,
             .config = config,
         };
     }
@@ -107,7 +110,7 @@ pub const OIDCClient = struct {
     
     pub fn exchangeCodeForToken(self: *OIDCClient, code: []const u8) !OIDCTokenResponse {
         std.debug.print("🔄 Starting Microsoft token exchange...\n", .{});
-        var client = std.http.Client{ .allocator = self.allocator };
+        var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
         
         // Build token endpoint URL
@@ -170,7 +173,7 @@ pub const OIDCClient = struct {
     }
     
     pub fn getUserInfo(self: *OIDCClient, access_token: []const u8) !OIDCUserInfo {
-        var client = std.http.Client{ .allocator = self.allocator };
+        var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
         
         // Use Microsoft Graph API to get user info
@@ -221,17 +224,57 @@ pub const OIDCClient = struct {
     }
     
     pub fn refreshToken(self: *OIDCClient, refresh_token: []const u8) !OIDCTokenResponse {
-        _ = self;
-        _ = refresh_token;
-        // This would make an HTTP POST request to refresh the token
-        // For now, return a mock response
+        var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
+        defer client.deinit();
+
+        // Build token endpoint URL
+        const token_url = try std.fmt.allocPrint(self.allocator, "{s}/oauth2/v2.0/token", .{self.config.authority});
+        defer self.allocator.free(token_url);
+
+        // Build refresh request body
+        const body = try std.fmt.allocPrint(
+            self.allocator,
+            "grant_type=refresh_token&refresh_token={s}&client_id={s}&client_secret={s}&scope={s}",
+            .{ refresh_token, self.config.client_id, self.config.client_secret, self.config.scope },
+        );
+        defer self.allocator.free(body);
+
+        const uri = try std.Uri.parse(token_url);
+
+        const headers = [_]std.http.Header{
+            .{ .name = "Content-Type", .value = "application/x-www-form-urlencoded" },
+        };
+
+        var req = try client.request(.POST, uri, .{ .extra_headers = &headers });
+        defer req.deinit();
+
+        req.transfer_encoding = .{ .content_length = body.len };
+        try req.sendBodyComplete(body);
+
+        var redirect_buffer: [1024]u8 = undefined;
+        const response = try req.receiveHead(&redirect_buffer);
+
+        if (response.head.status != .ok) {
+            return error.RefreshTokenFailed;
+        }
+
+        var transfer_buffer: [4096]u8 = undefined;
+        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
+        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
+        defer self.allocator.free(response_body);
+
+        const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
+        defer parsed.deinit();
+
+        const obj = parsed.value.object;
+
         return OIDCTokenResponse{
-            .access_token = "new_mock_access_token",
-            .token_type = "Bearer",
-            .expires_in = 3600,
-            .scope = "openid profile email",
-            .id_token = "new_mock_id_token",
-            .refresh_token = "new_mock_refresh_token",
+            .access_token = try self.allocator.dupe(u8, obj.get("access_token").?.string),
+            .token_type = try self.allocator.dupe(u8, obj.get("token_type").?.string),
+            .expires_in = @intCast(obj.get("expires_in").?.integer),
+            .scope = try self.allocator.dupe(u8, obj.get("scope").?.string),
+            .id_token = try self.allocator.dupe(u8, obj.get("id_token").?.string),
+            .refresh_token = if (obj.get("refresh_token")) |rt| try self.allocator.dupe(u8, rt.string) else null,
         };
     }
     
@@ -246,7 +289,7 @@ pub const OIDCClient = struct {
 
 fn generateState(allocator: std.mem.Allocator) ![]u8 {
     var random_bytes: [16]u8 = undefined;
-    std.crypto.random.bytes(&random_bytes);
+    compat.cryptoRandomBytes(&random_bytes);
     
     var encoded: [24]u8 = undefined;
     _ = std.base64.url_safe_no_pad.Encoder.encode(&encoded, &random_bytes);
@@ -255,7 +298,7 @@ fn generateState(allocator: std.mem.Allocator) ![]u8 {
 
 fn generateNonce(allocator: std.mem.Allocator) ![]u8 {
     var random_bytes: [16]u8 = undefined;
-    std.crypto.random.bytes(&random_bytes);
+    compat.cryptoRandomBytes(&random_bytes);
     
     var encoded: [24]u8 = undefined;
     _ = std.base64.url_safe_no_pad.Encoder.encode(&encoded, &random_bytes);
@@ -283,8 +326,8 @@ pub fn decodeJWT(allocator: std.mem.Allocator, token: []const u8) !JWTClaims {
         .iss = "https://login.microsoftonline.com/tenant/v2.0",
         .sub = "1234567890",
         .aud = "client_id",
-        .exp = std.time.timestamp() + 3600,
-        .iat = std.time.timestamp(),
+        .exp = compat.timestamp() + 3600,
+        .iat = compat.timestamp(),
         .nonce = null,
         .email = "user@example.com",
         .name = "John Doe",
@@ -292,24 +335,24 @@ pub fn decodeJWT(allocator: std.mem.Allocator, token: []const u8) !JWTClaims {
 }
 
 fn urlEncode(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var encoded = std.array_list.AlignedManaged(u8, null).init(allocator);
-    
+    var encoded: std.ArrayList(u8) = .empty;
+
     for (input) |c| {
         switch (c) {
             'A'...'Z', 'a'...'z', '0'...'9', '-', '_', '.', '~' => {
-                try encoded.append(c);
+                try encoded.append(allocator, c);
             },
             ' ' => {
-                try encoded.append('+');
+                try encoded.append(allocator, '+');
             },
             else => {
                 const hex_chars = "0123456789ABCDEF";
-                try encoded.append('%');
-                try encoded.append(hex_chars[(c >> 4) & 0xF]);
-                try encoded.append(hex_chars[c & 0xF]);
+                try encoded.append(allocator, '%');
+                try encoded.append(allocator, hex_chars[(c >> 4) & 0xF]);
+                try encoded.append(allocator, hex_chars[c & 0xF]);
             },
         }
     }
-    
-    return encoded.toOwnedSlice();
+
+    return encoded.toOwnedSlice(allocator);
 }

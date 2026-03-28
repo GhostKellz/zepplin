@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @cImport({
     @cInclude("sqlite3.h");
 });
+const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
 
 pub const Database = struct {
@@ -276,8 +277,8 @@ pub const Database = struct {
             package.license orelse "",
             package.repository orelse "",
             "", // dependencies as JSON string - TODO: serialize properly
-            std.time.timestamp(),
-            std.time.timestamp(),
+            compat.timestamp(),
+            compat.timestamp(),
         });
         defer self.allocator.free(sql);
 
@@ -1214,7 +1215,7 @@ pub const Database = struct {
         _ = c.sqlite3_bind_text(stmt, 2, email_z.ptr, -1, null);
         _ = c.sqlite3_bind_text(stmt, 3, password_hash_z.ptr, -1, null);
         _ = c.sqlite3_bind_text(stmt, 4, api_token_z.ptr, -1, null);
-        _ = c.sqlite3_bind_int64(stmt, 5, std.time.timestamp());
+        _ = c.sqlite3_bind_int64(stmt, 5, compat.timestamp());
         
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) {
             std.log.err("Failed to create user: {s}", .{c.sqlite3_errmsg(self.db)});
