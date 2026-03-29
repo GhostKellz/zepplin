@@ -1,24 +1,18 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// Write all data to a network stream using direct syscall
+/// Write all data to a network stream using unbuffered Zig 0.16 std.Io writer
+/// Uses empty buffer to force immediate writes (no buffering)
 pub fn streamWriteAll(stream: std.Io.net.Stream, io: std.Io, data: []const u8) !void {
-    _ = io;
-    const fd = stream.socket.handle;
-    var written: usize = 0;
-    while (written < data.len) {
-        const remaining = data[written..];
-        const result = std.os.linux.write(fd, remaining.ptr, remaining.len);
-        const signed_result: isize = @bitCast(result);
-        if (signed_result < 0) {
-            std.debug.print("❌ Write error: {}\n", .{signed_result});
-            return error.WriteFailed;
-        }
-        if (result == 0) {
-            return error.WriteFailed;
-        }
-        written += result;
-    }
+    // Empty buffer forces immediate writes - data goes directly to sendmsg
+    var writer = stream.writer(io, &.{});
+    writer.interface.writeAll(data) catch |err| switch (err) {
+        error.WriteFailed => {
+            // Return the actual underlying error from writer.err
+            if (writer.err) |e| return e;
+            return err;
+        },
+    };
 }
 
 /// Get current unix timestamp in seconds (compatibility for Zig 0.16.0)

@@ -7,7 +7,7 @@ const Storage = @import("../storage/storage.zig").Storage;
 const ZigistryClient = @import("../zigistry/client.zig").ZigistryClient;
 const ZiglibsImporter = @import("../tools/ziglibs_import.zig").ZiglibsImporter;
 
-const ZEPPLIN_VERSION = "0.6.2";
+const ZEPPLIN_VERSION = "0.6.3";
 
 const RouteHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) anyerror!void;
 const StaticHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8) anyerror!void;
@@ -477,7 +477,7 @@ pub const Server = struct {
                 continue;
             };
 
-            // Handle connection in a separate thread (simplified for prototype)
+            // Handle connection synchronously (single-threaded server)
             self.handleStream(stream) catch |err| {
                 std.debug.print("❌ Error handling connection: {}\n", .{err});
             };
@@ -492,24 +492,44 @@ pub const Server = struct {
         defer arena.deinit();
         const request_allocator = arena.allocator();
 
-        var buffer: [4096]u8 = undefined;
-        var read_buf: [4096]u8 = undefined;
-        var reader = stream.reader(self.io, &read_buf);
-        const bytes_read = reader.interface.readSliceShort(&buffer) catch |err| {
-            std.debug.print("❌ Failed to read request: {}\n", .{err});
-            return;
+        // Use std.http.Server for proper HTTP handling
+        var recv_buffer: [8192]u8 = undefined;
+        var send_buffer: [8192]u8 = undefined;
+        var connection_reader = stream.reader(self.io, &recv_buffer);
+        var connection_writer = stream.writer(self.io, &send_buffer);
+        var http_server: std.http.Server = .init(&connection_reader.interface, &connection_writer.interface);
+
+        const http_request = http_server.receiveHead() catch |err| {
+            switch (err) {
+                error.HttpConnectionClosing => return,
+                else => {
+                    std.debug.print("❌ Failed to receive HTTP head: {}\n", .{err});
+                    return;
+                },
+            }
         };
-        const request = buffer[0..bytes_read];
 
-        // Parse HTTP request (simplified)
-        var lines = std.mem.splitSequence(u8, request, "\r\n");
-        const request_line = lines.next() orelse return ServerError.InvalidRequest;
+        const method_str = @tagName(http_request.head.method);
+        const path = http_request.head.target;
 
-        var parts = std.mem.splitSequence(u8, request_line, " ");
-        const method = parts.next() orelse return ServerError.InvalidRequest;
-        const path = parts.next() orelse return ServerError.InvalidRequest;
+        try self.routeRequestHttp(stream, &connection_writer, method_str, path, http_request.head_buffer, request_allocator);
+    }
 
+    // New routing function that uses the persistent writer
+    fn routeRequestHttp(self: *Server, stream: std.Io.net.Stream, writer: *std.Io.net.Stream.Writer, method: []const u8, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+        std.debug.print("📡 {s} {s}\n", .{ method, path });
+
+        // For now, delegate to the original routing logic but use proper writer
         try self.routeRequest(stream, method, path, request, request_allocator);
+
+        // Flush the writer to ensure all data is sent
+        writer.interface.flush() catch |err| switch (err) {
+            error.WriteFailed => {
+                if (writer.err) |e| {
+                    std.debug.print("❌ Flush error: {}\n", .{e});
+                }
+            },
+        };
     }
 
     fn routeRequest(self: *Server, stream: std.Io.net.Stream, method: []const u8, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
@@ -1990,11 +2010,17 @@ pub const Server = struct {
             return;
         }
 
-        // Read the full request
-        var buffer: [50 * 1024 * 1024]u8 = undefined; // 50MB max upload
+        // Read the full request (heap allocated to avoid stack overflow)
+        const max_upload_size = 50 * 1024 * 1024; // 50MB max upload
+        const buffer = self.allocator.alloc(u8, max_upload_size) catch {
+            try self.serveJsonError(stream, 500, "Server out of memory");
+            return;
+        };
+        defer self.allocator.free(buffer);
+
         var read_buf: [8192]u8 = undefined;
         var reader = stream.reader(self.io, &read_buf);
-        const bytes_read = reader.interface.readSliceShort(&buffer) catch 0;
+        const bytes_read = reader.interface.readSliceShort(buffer) catch 0;
         const request = buffer[0..bytes_read];
 
         // Find the body after headers
