@@ -147,9 +147,9 @@ a:hover {
 }
 
 .logo-img {
-    height: 36px;
+    height: 44px;
     width: auto;
-    filter: drop-shadow(0 0 10px rgba(255, 214, 10, 0.5));
+    filter: drop-shadow(0 0 12px rgba(255, 214, 10, 0.6));
     transition: var(--transition-base);
 }
 

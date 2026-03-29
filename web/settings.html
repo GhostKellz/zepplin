@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Zepplin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .settings-page {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .settings-card {
+            background: var(--card-bg, #1a1a2e);
+            border-radius: 12px;
+            padding: 2rem;
+            border: 1px solid var(--border-color, #333);
+            margin-bottom: 1.5rem;
+        }
+        .settings-card h2 {
+            margin: 0 0 1.5rem 0;
+            color: var(--text-primary, #fff);
+            font-size: 1.25rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color, #333);
+        }
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .setting-row:last-child {
+            border-bottom: none;
+        }
+        .setting-info h3 {
+            margin: 0 0 0.25rem 0;
+            color: var(--text-primary, #fff);
+            font-size: 1rem;
+        }
+        .setting-info p {
+            margin: 0;
+            color: var(--text-secondary, #888);
+            font-size: 0.875rem;
+        }
+        .setting-action button {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--border-color, #333);
+            background: transparent;
+            color: var(--text-primary, #fff);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .setting-action button:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .setting-action button.danger {
+            border-color: #ff4444;
+            color: #ff4444;
+        }
+        .setting-action button.danger:hover {
+            background: rgba(255,68,68,0.1);
+        }
+        .api-token-display {
+            background: #000;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            font-family: monospace;
+            color: var(--accent-color, #ffd60a);
+            word-break: break-all;
+            margin-top: 0.5rem;
+        }
+        .linked-accounts {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .linked-account {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem 1rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+        }
+        .linked-account-icon {
+            width: 32px;
+            height: 32px;
+        }
+        .linked-account-info {
+            flex: 1;
+        }
+        .linked-account-name {
+            color: var(--text-primary, #fff);
+            font-weight: 500;
+        }
+        .linked-account-email {
+            color: var(--text-secondary, #888);
+            font-size: 0.875rem;
+        }
+        .not-logged-in {
+            text-align: center;
+            padding: 3rem;
+        }
+        .not-logged-in h2 {
+            color: var(--text-primary, #fff);
+        }
+        .not-logged-in p {
+            color: var(--text-secondary, #888);
+            margin-bottom: 1.5rem;
+        }
+        .login-btn {
+            display: inline-block;
+            padding: 0.75rem 2rem;
+            background: var(--accent-color, #ffd60a);
+            color: #000;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <a href="/"><img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img"></a>
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/packages" class="nav-link">Browse</a>
+                    <a href="/trending" class="nav-link">Trending</a>
+                    <a href="/docs" class="nav-link">Docs</a>
+                    <div id="auth-nav"></div>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="settings-page">
+        <h1 style="color: var(--text-primary, #fff); margin-bottom: 1.5rem;">Settings</h1>
+
+        <div id="not-logged-in" class="settings-card">
+            <div class="not-logged-in">
+                <h2>Not Logged In</h2>
+                <p>Please sign in to access settings.</p>
+                <a href="/auth" class="login-btn">Sign In</a>
+            </div>
+        </div>
+
+        <div id="logged-in-settings" style="display: none;">
+            <div class="settings-card">
+                <h2>Linked Accounts</h2>
+                <div class="linked-accounts" id="linked-accounts">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h2>API Access</h2>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>API Token</h3>
+                        <p>Use this token for CLI and API access</p>
+                        <div class="api-token-display" id="api-token">Not generated</div>
+                    </div>
+                    <div class="setting-action">
+                        <button onclick="generateApiToken()">Generate New Token</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-card">
+                <h2>Danger Zone</h2>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Delete Account</h3>
+                        <p>Permanently delete your account and all packages</p>
+                    </div>
+                    <div class="setting-action">
+                        <button class="danger" onclick="confirmDeleteAccount()">Delete Account</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('zepplin_token');
+            if (token) {
+                try {
+                    const response = await fetch('/api/v1/auth/me', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (response.ok) {
+                        const user = await response.json();
+                        document.getElementById('not-logged-in').style.display = 'none';
+                        document.getElementById('logged-in-settings').style.display = 'block';
+
+                        // Show linked account
+                        const linkedAccountsEl = document.getElementById('linked-accounts');
+                        linkedAccountsEl.innerHTML = `
+                            <div class="linked-account">
+                                <img src="${getProviderIcon(user.provider)}" alt="${user.provider}" class="linked-account-icon">
+                                <div class="linked-account-info">
+                                    <div class="linked-account-name">${user.provider.charAt(0).toUpperCase() + user.provider.slice(1)}</div>
+                                    <div class="linked-account-email">${user.email || 'No email'}</div>
+                                </div>
+                            </div>
+                        `;
+
+                        // Show JWT as API token (first 50 chars)
+                        document.getElementById('api-token').textContent = token.substring(0, 50) + '...';
+                    }
+                } catch (e) {
+                    console.error('Failed to load settings:', e);
+                }
+            }
+        });
+
+        function getProviderIcon(provider) {
+            const icons = {
+                'github': 'https://github.githubassets.com/favicons/favicon-dark.svg',
+                'microsoft': 'https://www.microsoft.com/favicon.ico',
+                'google': 'https://www.google.com/favicon.ico',
+                'local': '/images/zepplin-logo.svg'
+            };
+            return icons[provider] || icons['local'];
+        }
+
+        function generateApiToken() {
+            alert('API token generation coming soon');
+        }
+
+        function confirmDeleteAccount() {
+            if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+                alert('Account deletion coming soon');
+            }
+        }
+    </script>
+</body>
+</html>

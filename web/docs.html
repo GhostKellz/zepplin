@@ -260,8 +260,9 @@
         <div style="margin-top: 3rem; padding: 2rem; background: var(--bg-secondary); border-radius: 0.5rem; border: 1px solid var(--border-subtle);">
             <h3 style="color: var(--lightning-400); margin-bottom: 1rem;">💡 Quick Tips</h3>
             <ul style="color: var(--text-muted); line-height: 1.8;">
-                <li>Use <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">zig fetch</code> to download packages from Zepplin</li>
-                <li>Add dependencies to your <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">build.zig.zon</code> file</li>
+                <li>Use <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">zig fetch --save &lt;url&gt;</code> to add dependencies directly to your <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">build.zig.zon</code></li>
+                <li>Pin to a tag: <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">zig fetch --save https://github.com/user/repo/archive/refs/tags/v1.0.0.tar.gz</code></li>
+                <li>Or latest main: <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">zig fetch --save https://github.com/user/repo/archive/main.tar.gz</code></li>
                 <li>Run <code style="background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem;">zig build</code> to compile your project with dependencies</li>
                 <li>Check out the <a href="https://github.com/ziglang/zig/wiki" target="_blank" style="color: var(--lightning-400);">Zig Wiki</a> for community resources</li>
             </ul>

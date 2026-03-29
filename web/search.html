@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search - Zepplin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .search-page {
+            max-width: 1000px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .search-header {
+            margin-bottom: 2rem;
+        }
+        .search-header h1 {
+            color: var(--text-primary, #fff);
+            margin: 0 0 1rem 0;
+        }
+        .search-box-large {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .search-box-large input {
+            flex: 1;
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color, #333);
+            background: var(--card-bg, #1a1a2e);
+            color: var(--text-primary, #fff);
+            font-size: 1rem;
+        }
+        .search-box-large input:focus {
+            outline: none;
+            border-color: var(--accent-color, #ffd60a);
+        }
+        .search-box-large button {
+            padding: 1rem 2rem;
+            background: var(--accent-color, #ffd60a);
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .search-box-large button:hover {
+            opacity: 0.9;
+        }
+        .search-results {
+            margin-top: 2rem;
+        }
+        .results-count {
+            color: var(--text-secondary, #888);
+            margin-bottom: 1rem;
+        }
+        .package-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .package-card {
+            background: var(--card-bg, #1a1a2e);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color, #333);
+            transition: border-color 0.2s;
+        }
+        .package-card:hover {
+            border-color: var(--accent-color, #ffd60a);
+        }
+        .package-card h3 {
+            margin: 0 0 0.5rem 0;
+        }
+        .package-card h3 a {
+            color: var(--accent-color, #ffd60a);
+            text-decoration: none;
+        }
+        .package-card h3 a:hover {
+            text-decoration: underline;
+        }
+        .package-description {
+            color: var(--text-secondary, #888);
+            margin: 0 0 1rem 0;
+        }
+        .package-meta {
+            display: flex;
+            gap: 1.5rem;
+            color: var(--text-secondary, #888);
+            font-size: 0.875rem;
+        }
+        .package-version {
+            background: rgba(255,214,10,0.1);
+            color: var(--accent-color, #ffd60a);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .no-results {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary, #888);
+        }
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary, #888);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <a href="/"><img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img"></a>
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/packages" class="nav-link">Browse</a>
+                    <a href="/trending" class="nav-link">Trending</a>
+                    <a href="/docs" class="nav-link">Docs</a>
+                    <div id="auth-nav"></div>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="search-page">
+        <div class="search-header">
+            <h1>Search Packages</h1>
+            <div class="search-box-large">
+                <input type="text" id="search-input" placeholder="Search for packages...">
+                <button onclick="doSearch()">Search</button>
+            </div>
+        </div>
+
+        <div class="search-results" id="search-results">
+            <div class="loading" id="loading" style="display: none;">Searching...</div>
+            <div class="no-results" id="no-results" style="display: none;">No packages found</div>
+            <div class="results-count" id="results-count" style="display: none;"></div>
+            <div class="package-list" id="package-list"></div>
+        </div>
+    </main>
+
+    <script src="/js/main.js"></script>
+    <script>
+        const searchInput = document.getElementById('search-input');
+        const loadingEl = document.getElementById('loading');
+        const noResultsEl = document.getElementById('no-results');
+        const resultsCountEl = document.getElementById('results-count');
+        const packageListEl = document.getElementById('package-list');
+
+        // Get query from URL on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const query = params.get('q');
+            if (query) {
+                searchInput.value = query;
+                performSearch(query);
+            }
+        });
+
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                doSearch();
+            }
+        });
+
+        function doSearch() {
+            const query = searchInput.value.trim();
+            if (query) {
+                // Update URL without reload
+                history.pushState(null, '', `/search?q=${encodeURIComponent(query)}`);
+                performSearch(query);
+            }
+        }
+
+        async function performSearch(query) {
+            loadingEl.style.display = 'block';
+            noResultsEl.style.display = 'none';
+            resultsCountEl.style.display = 'none';
+            packageListEl.innerHTML = '';
+
+            try {
+                const response = await fetch(`/api/v1/search?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+
+                loadingEl.style.display = 'none';
+
+                const packages = data.packages || data || [];
+
+                if (packages.length === 0) {
+                    noResultsEl.style.display = 'block';
+                    return;
+                }
+
+                resultsCountEl.textContent = `Found ${packages.length} package${packages.length === 1 ? '' : 's'}`;
+                resultsCountEl.style.display = 'block';
+
+                packages.forEach(pkg => {
+                    const card = document.createElement('div');
+                    card.className = 'package-card';
+                    card.innerHTML = `
+                        <h3><a href="/packages/${pkg.name || pkg.owner + '/' + pkg.repo}">${pkg.name || pkg.full_name || pkg.owner + '/' + pkg.repo}</a></h3>
+                        <p class="package-description">${pkg.description || 'No description'}</p>
+                        <div class="package-meta">
+                            <span class="package-version">${pkg.version || pkg.latest_version || 'v0.0.0'}</span>
+                            <span>${pkg.downloads || 0} downloads</span>
+                            ${pkg.stars ? `<span>${pkg.stars} stars</span>` : ''}
+                        </div>
+                    `;
+                    packageListEl.appendChild(card);
+                });
+            } catch (error) {
+                console.error('Search failed:', error);
+                loadingEl.style.display = 'none';
+                noResultsEl.textContent = 'Search failed. Please try again.';
+                noResultsEl.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

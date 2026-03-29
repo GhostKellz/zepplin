@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browse Packages - Zepplin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .browse-page {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .browse-header {
+            margin-bottom: 2rem;
+        }
+        .browse-header h1 {
+            color: var(--text-primary, #fff);
+            margin: 0 0 1rem 0;
+        }
+        .categories {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 2rem;
+        }
+        .category-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            border: 1px solid var(--border-color, #333);
+            background: transparent;
+            color: var(--text-primary, #fff);
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        .category-btn:hover, .category-btn.active {
+            background: var(--accent-color, #ffd60a);
+            color: #000;
+            border-color: var(--accent-color, #ffd60a);
+        }
+        .package-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .package-card {
+            background: var(--card-bg, #1a1a2e);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color, #333);
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .package-card:hover {
+            border-color: var(--accent-color, #ffd60a);
+            transform: translateY(-2px);
+        }
+        .package-card h3 {
+            margin: 0 0 0.5rem 0;
+        }
+        .package-card h3 a {
+            color: var(--accent-color, #ffd60a);
+            text-decoration: none;
+        }
+        .package-card h3 a:hover {
+            text-decoration: underline;
+        }
+        .package-description {
+            color: var(--text-secondary, #888);
+            margin: 0 0 1rem 0;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .package-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            color: var(--text-secondary, #888);
+            font-size: 0.875rem;
+        }
+        .package-version {
+            background: rgba(255,214,10,0.1);
+            color: var(--accent-color, #ffd60a);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary, #888);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary, #888);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <a href="/"><img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img"></a>
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/packages" class="nav-link active">Browse</a>
+                    <a href="/trending" class="nav-link">Trending</a>
+                    <a href="/docs" class="nav-link">Docs</a>
+                    <div id="auth-nav"></div>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="browse-page">
+        <div class="browse-header">
+            <h1>Browse Packages</h1>
+            <div class="categories">
+                <a href="/packages" class="category-btn active" data-category="all">All</a>
+                <a href="/packages?category=networking" class="category-btn" data-category="networking">Networking</a>
+                <a href="/packages?category=crypto" class="category-btn" data-category="crypto">Crypto</a>
+                <a href="/packages?category=database" class="category-btn" data-category="database">Database</a>
+                <a href="/packages?category=web" class="category-btn" data-category="web">Web</a>
+                <a href="/packages?category=cli" class="category-btn" data-category="cli">CLI Tools</a>
+                <a href="/packages?category=graphics" class="category-btn" data-category="graphics">Graphics</a>
+                <a href="/packages?category=parsing" class="category-btn" data-category="parsing">Parsing</a>
+                <a href="/packages?category=testing" class="category-btn" data-category="testing">Testing</a>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">Loading packages...</div>
+        <div class="empty-state" id="empty-state" style="display: none;">No packages found</div>
+        <div class="package-grid" id="package-grid"></div>
+    </main>
+
+    <script src="/js/main.js"></script>
+    <script>
+        const loadingEl = document.getElementById('loading');
+        const emptyStateEl = document.getElementById('empty-state');
+        const packageGridEl = document.getElementById('package-grid');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const category = params.get('category') || 'all';
+
+            // Highlight active category
+            document.querySelectorAll('.category-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.category === category);
+            });
+
+            loadPackages(category);
+        });
+
+        // Handle category clicks without page reload
+        document.querySelectorAll('.category-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const category = btn.dataset.category;
+
+                document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                const url = category === 'all' ? '/packages' : `/packages?category=${category}`;
+                history.pushState(null, '', url);
+
+                loadPackages(category);
+            });
+        });
+
+        async function loadPackages(category) {
+            loadingEl.style.display = 'block';
+            emptyStateEl.style.display = 'none';
+            packageGridEl.innerHTML = '';
+
+            try {
+                let url = '/api/v1/packages?limit=50';
+                if (category && category !== 'all') {
+                    url += `&category=${encodeURIComponent(category)}`;
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                loadingEl.style.display = 'none';
+
+                const packages = data.packages || data || [];
+
+                if (packages.length === 0) {
+                    emptyStateEl.style.display = 'block';
+                    return;
+                }
+
+                packages.forEach(pkg => {
+                    const card = document.createElement('div');
+                    card.className = 'package-card';
+                    card.innerHTML = `
+                        <h3><a href="/packages/${pkg.name || pkg.full_name || pkg.owner + '/' + pkg.repo}">${pkg.name || pkg.full_name || pkg.owner + '/' + pkg.repo}</a></h3>
+                        <p class="package-description">${pkg.description || 'No description'}</p>
+                        <div class="package-meta">
+                            <span class="package-version">${pkg.version || pkg.latest_version || 'v0.0.0'}</span>
+                            <span>${pkg.downloads || 0} downloads</span>
+                            ${pkg.stars ? `<span>${pkg.stars} stars</span>` : ''}
+                        </div>
+                    `;
+                    packageGridEl.appendChild(card);
+                });
+            } catch (error) {
+                console.error('Failed to load packages:', error);
+                loadingEl.style.display = 'none';
+                emptyStateEl.textContent = 'Failed to load packages. Please try again.';
+                emptyStateEl.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

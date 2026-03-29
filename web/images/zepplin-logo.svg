@@ -1,6 +1,6 @@
-<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="64" height="48" viewBox="0 0 64 48" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Zeppelin body gradient - teal/cyan like the PNG -->
+    <!-- Zeppelin body gradient -->
     <linearGradient id="zepBody" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#48cae4"/>
       <stop offset="50%" style="stop-color:#0096c7"/>
@@ -8,56 +8,56 @@
     </linearGradient>
     <!-- Body highlight -->
     <linearGradient id="zepHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#90e0ef;stop-opacity:0.7"/>
+      <stop offset="0%" style="stop-color:#90e0ef;stop-opacity:0.8"/>
       <stop offset="100%" style="stop-color:#48cae4;stop-opacity:0"/>
     </linearGradient>
     <!-- Lightning gradient -->
-    <linearGradient id="zepLightning" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ffd60a"/>
-      <stop offset="100%" style="stop-color:#ffde3d"/>
+    <linearGradient id="zepLightning" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffe566"/>
+      <stop offset="50%" style="stop-color:#ffd60a"/>
+      <stop offset="100%" style="stop-color:#e6b800"/>
     </linearGradient>
     <!-- Glow filter for lightning -->
     <filter id="zepGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="1" result="blur"/>
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
-    <!-- Shadow for depth -->
+    <!-- Shadow -->
     <filter id="zepShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="1" dy="2" stdDeviation="1" flood-color="#000814" flood-opacity="0.4"/>
+      <feDropShadow dx="1" dy="2" stdDeviation="1.5" flood-color="#000814" flood-opacity="0.3"/>
     </filter>
   </defs>
 
-  <!-- Zeppelin body - elongated oval -->
-  <ellipse cx="24" cy="22" rx="20" ry="10" fill="url(#zepBody)" filter="url(#zepShadow)"/>
+  <!-- Zeppelin body - larger and clearer -->
+  <ellipse cx="22" cy="22" rx="18" ry="11" fill="url(#zepBody)" filter="url(#zepShadow)"/>
 
   <!-- Body highlight for 3D effect -->
-  <ellipse cx="24" cy="18" rx="16" ry="6" fill="url(#zepHighlight)"/>
+  <ellipse cx="22" cy="17" rx="14" ry="6" fill="url(#zepHighlight)"/>
 
   <!-- Gondola/cabin underneath -->
-  <rect x="18" y="30" width="12" height="4" rx="1.5" fill="#003566"/>
-  <rect x="20" y="31" width="8" height="2" rx="1" fill="#005299"/>
+  <rect x="16" y="31" width="12" height="5" rx="2" fill="#003566"/>
+  <rect x="18" y="32.5" width="8" height="2" rx="1" fill="#005299"/>
 
-  <!-- Support lines from body to gondola -->
-  <line x1="20" y1="32" x2="18" y2="30" stroke="#0077b6" stroke-width="0.5"/>
-  <line x1="28" y1="32" x2="30" y2="30" stroke="#0077b6" stroke-width="0.5"/>
+  <!-- Support lines -->
+  <line x1="18" y1="33" x2="15" y2="31" stroke="#0077b6" stroke-width="0.7"/>
+  <line x1="26" y1="33" x2="29" y2="31" stroke="#0077b6" stroke-width="0.7"/>
 
-  <!-- Tail fins - horizontal stabilizers -->
-  <path d="M 40 17 L 46 12 L 46 17 Z" fill="#0077b6"/>
-  <path d="M 40 27 L 46 32 L 46 27 Z" fill="#003566"/>
+  <!-- Tail fins -->
+  <path d="M 36 16 L 42 10 L 42 16 Z" fill="#0077b6"/>
+  <path d="M 36 28 L 42 34 L 42 28 Z" fill="#003566"/>
+  <path d="M 38 22 L 44 22 L 42 16 L 42 28 Z" fill="#005299"/>
 
-  <!-- Tail fin - vertical stabilizer -->
-  <path d="M 42 22 L 48 22 L 46 18 L 46 26 Z" fill="#005299"/>
-
-  <!-- Lightning bolt overlay - the signature element -->
-  <path d="M 18 14 L 28 14 L 22 22 L 28 22 L 16 34 L 22 24 L 16 24 Z"
+  <!-- Lightning bolt - to the RIGHT of zeppelin, bold and clear -->
+  <path d="M 50 8 L 58 8 L 52 20 L 58 20 L 46 40 L 52 24 L 46 24 Z"
         fill="url(#zepLightning)"
         filter="url(#zepGlow)"
-        stroke="#b37e00"
-        stroke-width="0.3"/>
+        stroke="#cc9a00"
+        stroke-width="0.8"
+        stroke-linejoin="round"/>
 
-  <!-- Small highlight on lightning for shine -->
-  <circle cx="20" cy="16" r="1" fill="#fff5cc" opacity="0.6"/>
+  <!-- Lightning shine -->
+  <path d="M 52 10 L 56 10 L 54 14 Z" fill="#fff5cc" opacity="0.7"/>
 </svg>

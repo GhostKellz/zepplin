@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Packages - Zepplin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .my-packages-page {
+            max-width: 1000px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .page-header h1 {
+            color: var(--text-primary, #fff);
+            margin: 0;
+        }
+        .publish-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--accent-color, #ffd60a);
+            color: #000;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        .publish-btn:hover {
+            opacity: 0.9;
+        }
+        .packages-grid {
+            display: grid;
+            gap: 1rem;
+        }
+        .package-card {
+            background: var(--card-bg, #1a1a2e);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color, #333);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .package-info h3 {
+            margin: 0 0 0.5rem 0;
+            color: var(--text-primary, #fff);
+        }
+        .package-info h3 a {
+            color: inherit;
+            text-decoration: none;
+        }
+        .package-info h3 a:hover {
+            color: var(--accent-color, #ffd60a);
+        }
+        .package-meta {
+            display: flex;
+            gap: 1.5rem;
+            color: var(--text-secondary, #888);
+            font-size: 0.875rem;
+        }
+        .package-version {
+            background: rgba(255,214,10,0.1);
+            color: var(--accent-color, #ffd60a);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .package-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .package-actions button {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--border-color, #333);
+            background: transparent;
+            color: var(--text-primary, #fff);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .package-actions button:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            background: var(--card-bg, #1a1a2e);
+            border-radius: 12px;
+            border: 1px solid var(--border-color, #333);
+        }
+        .empty-state h2 {
+            color: var(--text-primary, #fff);
+            margin: 0 0 1rem 0;
+        }
+        .empty-state p {
+            color: var(--text-secondary, #888);
+            margin: 0 0 1.5rem 0;
+        }
+        .not-logged-in {
+            text-align: center;
+            padding: 3rem;
+            background: var(--card-bg, #1a1a2e);
+            border-radius: 12px;
+            border: 1px solid var(--border-color, #333);
+        }
+        .not-logged-in h2 {
+            color: var(--text-primary, #fff);
+        }
+        .not-logged-in p {
+            color: var(--text-secondary, #888);
+            margin-bottom: 1.5rem;
+        }
+        .login-btn {
+            display: inline-block;
+            padding: 0.75rem 2rem;
+            background: var(--accent-color, #ffd60a);
+            color: #000;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <a href="/"><img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img"></a>
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/packages" class="nav-link">Browse</a>
+                    <a href="/trending" class="nav-link">Trending</a>
+                    <a href="/docs" class="nav-link">Docs</a>
+                    <div id="auth-nav"></div>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="my-packages-page">
+        <div id="not-logged-in" class="not-logged-in">
+            <h2>Not Logged In</h2>
+            <p>Please sign in to view your packages.</p>
+            <a href="/auth" class="login-btn">Sign In</a>
+        </div>
+
+        <div id="logged-in-content" style="display: none;">
+            <div class="page-header">
+                <h1>My Packages</h1>
+                <a href="/publish" class="publish-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Publish New Package
+                </a>
+            </div>
+
+            <div id="packages-container">
+                <div class="empty-state">
+                    <h2>No packages yet</h2>
+                    <p>You haven't published any packages. Get started by publishing your first Zig package!</p>
+                    <a href="/publish" class="publish-btn">Publish Your First Package</a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('zepplin_token');
+            if (token) {
+                try {
+                    const response = await fetch('/api/v1/auth/me', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (response.ok) {
+                        const user = await response.json();
+                        document.getElementById('not-logged-in').style.display = 'none';
+                        document.getElementById('logged-in-content').style.display = 'block';
+
+                        // TODO: Fetch user's packages when API is ready
+                        // const packagesResponse = await fetch(`/api/v1/users/${user.username}/packages`);
+                    }
+                } catch (e) {
+                    console.error('Failed to load packages:', e);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - Zepplin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .profile-page {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .profile-card {
+            background: var(--card-bg, #1a1a2e);
+            border-radius: 12px;
+            padding: 2rem;
+            border: 1px solid var(--border-color, #333);
+        }
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .profile-avatar-large {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: var(--accent-color, #ffd60a);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #000;
+        }
+        .profile-avatar-large img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .profile-info h1 {
+            margin: 0 0 0.5rem 0;
+            color: var(--text-primary, #fff);
+        }
+        .profile-info p {
+            margin: 0;
+            color: var(--text-secondary, #888);
+        }
+        .profile-provider {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            background: var(--accent-color, #ffd60a);
+            color: #000;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+        }
+        .profile-section {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border-color, #333);
+        }
+        .profile-section h2 {
+            margin: 0 0 1rem 0;
+            color: var(--text-primary, #fff);
+            font-size: 1.25rem;
+        }
+        .profile-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+        .profile-stat {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+        }
+        .profile-stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--accent-color, #ffd60a);
+        }
+        .profile-stat-label {
+            color: var(--text-secondary, #888);
+            font-size: 0.875rem;
+        }
+        .not-logged-in {
+            text-align: center;
+            padding: 3rem;
+        }
+        .not-logged-in h2 {
+            color: var(--text-primary, #fff);
+        }
+        .not-logged-in p {
+            color: var(--text-secondary, #888);
+            margin-bottom: 1.5rem;
+        }
+        .login-btn {
+            display: inline-block;
+            padding: 0.75rem 2rem;
+            background: var(--accent-color, #ffd60a);
+            color: #000;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        .login-btn:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <a href="/"><img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img"></a>
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/packages" class="nav-link">Browse</a>
+                    <a href="/trending" class="nav-link">Trending</a>
+                    <a href="/docs" class="nav-link">Docs</a>
+                    <div id="auth-nav"></div>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="profile-page">
+        <div class="profile-card" id="profile-content">
+            <div class="not-logged-in" id="not-logged-in">
+                <h2>Not Logged In</h2>
+                <p>Please sign in to view your profile.</p>
+                <a href="/auth" class="login-btn">Sign In</a>
+            </div>
+            <div id="logged-in" style="display: none;">
+                <div class="profile-header">
+                    <div class="profile-avatar-large" id="profile-avatar"></div>
+                    <div class="profile-info">
+                        <h1 id="profile-name">User</h1>
+                        <p id="profile-email">user@example.com</p>
+                        <span class="profile-provider" id="profile-provider">local</span>
+                    </div>
+                </div>
+                <div class="profile-section">
+                    <h2>Statistics</h2>
+                    <div class="profile-stats">
+                        <div class="profile-stat">
+                            <div class="profile-stat-value" id="stat-packages">0</div>
+                            <div class="profile-stat-label">Packages</div>
+                        </div>
+                        <div class="profile-stat">
+                            <div class="profile-stat-value" id="stat-downloads">0</div>
+                            <div class="profile-stat-label">Total Downloads</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/js/main.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('zepplin_token');
+            if (token) {
+                try {
+                    const response = await fetch('/api/v1/auth/me', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (response.ok) {
+                        const user = await response.json();
+                        document.getElementById('not-logged-in').style.display = 'none';
+                        document.getElementById('logged-in').style.display = 'block';
+
+                        const avatarUrl = localStorage.getItem('zepplin_avatar_url');
+                        const avatarEl = document.getElementById('profile-avatar');
+                        if (avatarUrl) {
+                            avatarEl.innerHTML = `<img src="${avatarUrl}" alt="${user.display_name}">`;
+                        } else {
+                            avatarEl.textContent = (user.display_name || user.username || 'U').charAt(0).toUpperCase();
+                        }
+
+                        document.getElementById('profile-name').textContent = user.display_name || user.username;
+                        document.getElementById('profile-email').textContent = user.email || '';
+                        document.getElementById('profile-provider').textContent = user.provider || 'local';
+                    }
+                } catch (e) {
+                    console.error('Failed to load profile:', e);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

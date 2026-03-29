@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trending Packages - Zepplin</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
+    <style>
+        .trending-page {
+            max-width: 1000px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .trending-header {
+            margin-bottom: 2rem;
+        }
+        .trending-header h1 {
+            color: var(--text-primary, #fff);
+            margin: 0;
+        }
+        .trending-header p {
+            color: var(--text-secondary, #888);
+            margin: 0.5rem 0 0 0;
+        }
+        .time-filters {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+        }
+        .time-filter {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            border: 1px solid var(--border-color, #333);
+            background: transparent;
+            color: var(--text-primary, #fff);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .time-filter:hover, .time-filter.active {
+            background: var(--accent-color, #ffd60a);
+            color: #000;
+            border-color: var(--accent-color, #ffd60a);
+        }
+        .package-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .package-card {
+            background: var(--card-bg, #1a1a2e);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color, #333);
+            display: flex;
+            align-items: flex-start;
+            gap: 1.5rem;
+            transition: border-color 0.2s;
+        }
+        .package-card:hover {
+            border-color: var(--accent-color, #ffd60a);
+        }
+        .package-rank {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--accent-color, #ffd60a);
+            min-width: 40px;
+        }
+        .package-info {
+            flex: 1;
+        }
+        .package-info h3 {
+            margin: 0 0 0.5rem 0;
+        }
+        .package-info h3 a {
+            color: var(--text-primary, #fff);
+            text-decoration: none;
+        }
+        .package-info h3 a:hover {
+            color: var(--accent-color, #ffd60a);
+        }
+        .package-description {
+            color: var(--text-secondary, #888);
+            margin: 0 0 1rem 0;
+        }
+        .package-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            color: var(--text-secondary, #888);
+            font-size: 0.875rem;
+        }
+        .package-version {
+            background: rgba(255,214,10,0.1);
+            color: var(--accent-color, #ffd60a);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .trending-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            color: #10b981;
+            font-weight: 500;
+        }
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary, #888);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            background: var(--card-bg, #1a1a2e);
+            border-radius: 12px;
+            border: 1px solid var(--border-color, #333);
+        }
+        .empty-state h2 {
+            color: var(--text-primary, #fff);
+            margin: 0 0 1rem 0;
+        }
+        .empty-state p {
+            color: var(--text-secondary, #888);
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <a href="/"><img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img"></a>
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/packages" class="nav-link">Browse</a>
+                    <a href="/trending" class="nav-link active">Trending</a>
+                    <a href="/docs" class="nav-link">Docs</a>
+                    <div id="auth-nav"></div>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="trending-page">
+        <div class="trending-header">
+            <h1>Trending Packages</h1>
+            <p>Most popular packages this week</p>
+        </div>
+
+        <div class="time-filters">
+            <button class="time-filter active" data-period="week">This Week</button>
+            <button class="time-filter" data-period="month">This Month</button>
+            <button class="time-filter" data-period="all">All Time</button>
+        </div>
+
+        <div class="loading" id="loading">Loading trending packages...</div>
+        <div class="package-list" id="package-list"></div>
+        <div class="empty-state" id="empty-state" style="display: none;">
+            <h2>No trending packages yet</h2>
+            <p>Be the first to publish a package and start the trend!</p>
+        </div>
+    </main>
+
+    <script src="/js/main.js"></script>
+    <script>
+        const loadingEl = document.getElementById('loading');
+        const packageListEl = document.getElementById('package-list');
+        const emptyStateEl = document.getElementById('empty-state');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTrending('week');
+        });
+
+        document.querySelectorAll('.time-filter').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.time-filter').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                loadTrending(btn.dataset.period);
+            });
+        });
+
+        async function loadTrending(period) {
+            loadingEl.style.display = 'block';
+            packageListEl.innerHTML = '';
+            emptyStateEl.style.display = 'none';
+
+            try {
+                // Try zigistry trending endpoint first, fall back to local packages
+                let packages = [];
+
+                try {
+                    const zigistryResponse = await fetch(`/api/zigistry/trending?period=${period}&limit=20`);
+                    if (zigistryResponse.ok) {
+                        const data = await zigistryResponse.json();
+                        packages = data.packages || data || [];
+                    }
+                } catch (e) {
+                    console.log('Zigistry unavailable, using local packages');
+                }
+
+                // Fall back to local featured packages
+                if (packages.length === 0) {
+                    const localResponse = await fetch('/api/v1/packages?featured=true&limit=20');
+                    if (localResponse.ok) {
+                        const data = await localResponse.json();
+                        packages = data.packages || data || [];
+                    }
+                }
+
+                loadingEl.style.display = 'none';
+
+                if (packages.length === 0) {
+                    emptyStateEl.style.display = 'block';
+                    return;
+                }
+
+                packages.forEach((pkg, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'package-card';
+                    card.innerHTML = `
+                        <div class="package-rank">#${index + 1}</div>
+                        <div class="package-info">
+                            <h3><a href="/packages/${pkg.name || pkg.full_name || pkg.owner + '/' + pkg.repo}">${pkg.name || pkg.full_name || pkg.owner + '/' + pkg.repo}</a></h3>
+                            <p class="package-description">${pkg.description || 'No description'}</p>
+                            <div class="package-meta">
+                                <span class="package-version">${pkg.version || pkg.latest_version || 'v0.0.0'}</span>
+                                <span>${pkg.downloads || 0} downloads</span>
+                                ${pkg.stars ? `<span>${pkg.stars} stars</span>` : ''}
+                                ${pkg.trend_score ? `<span class="trending-badge">+${pkg.trend_score}% this week</span>` : ''}
+                            </div>
+                        </div>
+                    `;
+                    packageListEl.appendChild(card);
+                });
+            } catch (error) {
+                console.error('Failed to load trending packages:', error);
+                loadingEl.style.display = 'none';
+                emptyStateEl.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

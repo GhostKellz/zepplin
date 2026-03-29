@@ -134,19 +134,22 @@
     </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-container">
-            <a href="/" class="nav-logo">
-                <img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img">
-                <span>Zepplin</span>
-            </a>
-            <div class="nav-links">
-                <a href="/packages" class="nav-link">Packages</a>
-                <a href="/docs" class="nav-link active">Docs</a>
-                <a href="/publish" class="nav-link">Publish</a>
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <a href="/"><img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img"></a>
+                </div>
+                <nav class="nav">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/packages" class="nav-link">Browse</a>
+                    <a href="/trending" class="nav-link">Trending</a>
+                    <a href="/docs" class="nav-link active">Docs</a>
+                    <div id="auth-nav"></div>
+                </nav>
             </div>
         </div>
-    </nav>
+    </header>
 
     <main class="docs-container">
         <nav class="nav-breadcrumb">
@@ -171,22 +174,36 @@
                 <li>A terminal/command prompt</li>
             </ul>
 
-            <h2><span class="step-number">2</span>Installation</h2>
+            <h2><span class="step-number">2</span>Adding Dependencies</h2>
             <h3>Option A: Using zig fetch (Recommended)</h3>
-            <p>Add Zepplin to your project's <code class="inline-code">build.zig.zon</code>:</p>
+            <p>The easiest way to add a dependency is with <code class="inline-code">zig fetch --save</code>:</p>
+            <div class="code-block">
+<code><span class="comment"># Add latest from main branch</span>
+zig fetch --save https://github.com/user/package/archive/main.tar.gz
+
+<span class="comment"># Or pin to a specific version tag (recommended for stability)</span>
+zig fetch --save https://github.com/user/package/archive/refs/tags/v1.0.0.tar.gz</code>
+            </div>
+            <p style="margin-top: 1rem;">This automatically adds the dependency with its hash to your <code class="inline-code">build.zig.zon</code>.</p>
+
+            <h3>Option B: Manual build.zig.zon Entry</h3>
+            <p>You can also manually add dependencies to your <code class="inline-code">build.zig.zon</code>:</p>
             <div class="code-block">
 <code><span class="keyword">.dependencies</span> = .{
-    <span class="keyword">.zepplin</span> = .{
-        <span class="keyword">.url</span> = <span class="string">"https://github.com/ckgxrg-salt/zepplin/archive/refs/heads/main.tar.gz"</span>,
-        <span class="comment">// Run: zig fetch --save &lt;url&gt; to get the hash</span>
+    <span class="keyword">.zqlite</span> = .{
+        <span class="keyword">.url</span> = <span class="string">"https://github.com/ghostkellz/zqlite/archive/refs/tags/v1.5.4.tar.gz"</span>,
+        <span class="keyword">.hash</span> = <span class="string">"1220abc123..."</span>, <span class="comment">// Get this from zig fetch output</span>
     },
 },</code>
             </div>
+            <p style="margin-top: 1rem; padding: 1rem; background: rgba(255,214,10,0.1); border-radius: 0.5rem; border-left: 3px solid var(--lightning-400);">
+                <strong>Tip:</strong> Always pin to a version tag (e.g., <code class="inline-code">refs/tags/v1.0.0</code>) for production projects. Using <code class="inline-code">main</code> or <code class="inline-code">master</code> branches can lead to unexpected breaking changes.
+            </p>
 
-            <h3>Option B: Clone and Build</h3>
+            <h3>Option C: Clone and Build from Source</h3>
             <div class="code-block">
 <code><span class="comment"># Clone the repository</span>
-git clone https://github.com/ckgxrg-salt/zepplin.git
+git clone https://github.com/ghostkellz/zepplin.git
 cd zepplin
 
 <span class="comment"># Build the CLI tool</span>
@@ -289,5 +306,6 @@ zepplin publish</code>
             <p>Built with Zig. Powered by Zepplin.</p>
         </div>
     </footer>
+    <script src="/js/main.js"></script>
 </body>
 </html>

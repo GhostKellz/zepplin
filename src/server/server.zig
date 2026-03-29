@@ -597,17 +597,29 @@ pub const Server = struct {
                 defer self.allocator.free(file_path);
                 try self.serveStaticFile(stream, file_path);
             } else if (std.mem.eql(u8, path, "/auth")) {
-                // Auth test page
                 try self.serveStaticFile(stream, "web/auth.html");
             } else if (std.mem.eql(u8, path, "/publish")) {
-                // Package publishing page
                 try self.serveStaticFile(stream, "web/publish.html");
-            } else if (std.mem.startsWith(u8, path, "/packages") or 
-                      std.mem.startsWith(u8, path, "/search") or 
-                      std.mem.startsWith(u8, path, "/trending") or 
-                      std.mem.startsWith(u8, path, "/docs") or
-                      std.mem.startsWith(u8, path, "/login")) {
-                // SPA routes - serve index.html
+            } else if (std.mem.eql(u8, path, "/profile")) {
+                try self.serveStaticFile(stream, "web/profile.html");
+            } else if (std.mem.eql(u8, path, "/settings")) {
+                try self.serveStaticFile(stream, "web/settings.html");
+            } else if (std.mem.eql(u8, path, "/packages/my")) {
+                try self.serveStaticFile(stream, "web/my-packages.html");
+            } else if (std.mem.eql(u8, path, "/packages") or std.mem.eql(u8, path, "/browse")) {
+                try self.serveStaticFile(stream, "web/browse.html");
+            } else if (std.mem.startsWith(u8, path, "/packages?")) {
+                try self.serveStaticFile(stream, "web/browse.html");
+            } else if (std.mem.eql(u8, path, "/trending") or std.mem.startsWith(u8, path, "/trending?")) {
+                try self.serveStaticFile(stream, "web/trending.html");
+            } else if (std.mem.eql(u8, path, "/search") or std.mem.startsWith(u8, path, "/search?")) {
+                try self.serveStaticFile(stream, "web/search.html");
+            } else if (std.mem.startsWith(u8, path, "/packages/")) {
+                // Individual package pages - serve browse for now
+                try self.serveStaticFile(stream, "web/browse.html");
+            } else if (std.mem.startsWith(u8, path, "/docs") or
+                      std.mem.startsWith(u8, path, "/login") or
+                      std.mem.startsWith(u8, path, "/account")) {
                 try self.serveStaticFile(stream, "web/templates/index.html");
             } else {
                 try self.serve404(stream);
@@ -2359,16 +2371,25 @@ pub const Server = struct {
     // Login disabled - will be re-implemented when User type is added
 
     fn validateAuthToken(self: *Server, request: []const u8) !?AuthenticatedUser {
-        // Extract Authorization header
-        const auth_header_start = std.mem.indexOf(u8, request, "Authorization: ") orelse {
-            std.debug.print("AUTH: No Authorization header found\n", .{});
+        // Debug: print request headers (first 500 chars)
+        std.debug.print("AUTH DEBUG request ({} bytes):\n{s}\n---END---\n", .{request.len, request[0..@min(request.len, 500)]});
+
+        // Extract Authorization header (case-insensitive search)
+        var auth_header_start: ?usize = std.mem.indexOf(u8, request, "Authorization: ");
+        if (auth_header_start == null) {
+            auth_header_start = std.mem.indexOf(u8, request, "authorization: ");
+        }
+
+        if (auth_header_start == null) {
+            std.debug.print("AUTH: No Authorization header found (checked both cases)\n", .{});
             return null;
-        };
-        const auth_line_end = std.mem.indexOf(u8, request[auth_header_start..], "\r\n") orelse {
+        }
+        const auth_start = auth_header_start.?;
+        const auth_line_end = std.mem.indexOf(u8, request[auth_start..], "\r\n") orelse {
             std.debug.print("AUTH: No line end after Authorization header\n", .{});
             return null;
         };
-        const auth_header = request[auth_header_start + 15..auth_header_start + auth_line_end];
+        const auth_header = request[auth_start + 15..auth_start + auth_line_end];
         std.debug.print("AUTH: Header found: {s}\n", .{auth_header[0..@min(auth_header.len, 50)]});
 
         // Extract Bearer token
