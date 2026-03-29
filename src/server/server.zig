@@ -2407,7 +2407,7 @@ pub const Server = struct {
         const signature_b64 = parts.next() orelse return null;
 
         // Get JWT secret from environment
-        const jwt_secret = self.environ_map.get("JWT_SECRET") orelse "change-me-in-production";
+        const jwt_secret = self.environ_map.get("JWT_SECRET") orelse "default_secret_change_in_production";
 
         // Verify signature - signing input is "header.payload"
         const signing_input = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{
