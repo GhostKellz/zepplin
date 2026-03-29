@@ -16,7 +16,7 @@ RUN ZIG_URL=$(curl -sL https://ziglang.org/download/index.json | jq -r '.master.
   && echo "Downloading Zig from: $ZIG_URL" \
   && curl -L "$ZIG_URL" -o /tmp/zig.tar.xz \
   && tar -xJf /tmp/zig.tar.xz -C /opt \
-  && ln -s /opt/zig-linux-x86_64-*/zig /usr/local/bin/zig \
+  && ln -s /opt/zig-x86_64-linux-*/zig /usr/local/bin/zig \
   && rm /tmp/zig.tar.xz \
   && zig version
 
