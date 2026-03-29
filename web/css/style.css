@@ -40,7 +40,7 @@
     --error: #ff006e;
     
     /* Layout */
-    --header-height: 90px;
+    --header-height: 100px;
     --container-max-width: 1280px;
     --border-radius-lg: 16px;
     --border-radius-md: 12px;
@@ -135,15 +135,17 @@ a:hover {
     justify-content: space-between;
     height: 100%;
     gap: 2rem;
+    padding: 0.75rem 0;
 }
 
 .logo {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 1rem;
     font-size: 1.5rem;
     font-weight: 800;
     color: var(--text-primary);
+    padding-left: 0.5rem;
 }
 
 .logo-img {
