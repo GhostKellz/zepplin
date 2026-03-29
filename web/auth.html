@@ -6,102 +6,123 @@
     <title>Sign In - Zepplin Registry</title>
     <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
     <style>
+        :root {
+            /* Deep Ocean Blue Palette */
+            --ocean-950: #000814;
+            --ocean-900: #001d3d;
+            --ocean-800: #002855;
+            --ocean-700: #003566;
+            --ocean-500: #005299;
+            --ocean-400: #0077b6;
+            --ocean-300: #0096c7;
+            --ocean-200: #48cae4;
+            --ocean-100: #90e0ef;
+
+            /* Lightning Yellow Palette */
+            --lightning-500: #ffd60a;
+            --lightning-400: #ffde3d;
+            --lightning-300: #ffe566;
+
+            /* Mint Green Accent */
+            --mint-500: #06ffa5;
+            --mint-400: #3dffc0;
+            --mint-300: #73ffd6;
+
+            --text-primary: #ffffff;
+            --text-secondary: #caf0f8;
+            --text-muted: #90e0ef;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0a0e14;
+            background: var(--ocean-950);
             background-image:
-                radial-gradient(ellipse at top, rgba(247, 147, 30, 0.08) 0%, transparent 50%),
-                radial-gradient(ellipse at bottom right, rgba(247, 147, 30, 0.05) 0%, transparent 40%);
-            color: #e6e1dc;
+                radial-gradient(ellipse at top left, rgba(0, 119, 182, 0.2) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom right, rgba(6, 255, 165, 0.08) 0%, transparent 50%),
+                linear-gradient(180deg, #000814 0%, #001d3d 100%);
+            color: var(--text-primary);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center;
             padding: 2rem;
         }
 
         .logo-section {
             text-align: center;
-            margin-bottom: 1.5rem;
+            margin-bottom: 2.5rem;
         }
 
-        .zig-logo {
-            width: 80px;
-            height: auto;
-            margin-bottom: 0.5rem;
-        }
-
-        .app-title {
-            font-size: 2.5rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #f7931e 0%, #ffb84d 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 0.25rem;
-        }
-
-        .app-subtitle {
-            color: #8b9ab4;
-            font-size: 1rem;
-            font-weight: 400;
-        }
-
-        .cktech-badge {
+        .logo-container {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.5rem;
-            margin-top: 1rem;
-            padding: 0.5rem 1rem;
-            background: rgba(255,255,255,0.05);
-            border-radius: 20px;
-            font-size: 0.8rem;
-            color: #6b7a94;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
         }
 
-        .cktech-badge img {
-            height: 20px;
-            width: auto;
+        .logo-img {
+            width: 64px;
+            height: 64px;
+            filter: drop-shadow(0 0 15px rgba(255, 214, 10, 0.4));
+        }
+
+        .app-title {
+            font-size: 2.75rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--lightning-500) 0%, var(--lightning-300) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+
+        .app-subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            margin-top: 0.25rem;
         }
 
         .login-container {
             width: 100%;
-            max-width: 400px;
+            max-width: 420px;
         }
 
         .login-card {
-            background: rgba(30, 35, 44, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 16px;
-            padding: 2rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            background: rgba(0, 29, 61, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(6, 255, 165, 0.15);
+            border-radius: 20px;
+            padding: 2.5rem;
+            box-shadow:
+                0 25px 50px -12px rgba(0, 0, 0, 0.7),
+                0 0 40px rgba(0, 119, 182, 0.1);
         }
 
         .welcome-text {
             text-align: center;
-            margin-bottom: 1.5rem;
+            margin-bottom: 2rem;
         }
 
         .welcome-text h2 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #fff;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--text-primary);
             margin-bottom: 0.25rem;
         }
 
         .welcome-text p {
-            color: #8b9ab4;
-            font-size: 0.9rem;
+            color: var(--text-muted);
+            font-size: 0.95rem;
         }
 
         .oauth-buttons {
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
+            gap: 0.875rem;
             margin-bottom: 1.5rem;
         }
 
@@ -110,49 +131,50 @@
             align-items: center;
             justify-content: center;
             gap: 0.75rem;
-            padding: 0.875rem 1rem;
-            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
             text-decoration: none;
-            font-size: 0.95rem;
+            font-size: 1rem;
             font-weight: 600;
             transition: all 0.2s ease;
             cursor: pointer;
         }
 
-        /* GitHub - Primary action, Zig orange */
+        /* GitHub - Primary action with mint accent */
         .oauth-button.github {
-            background: linear-gradient(135deg, #F7931E 0%, #e8850f 100%);
+            background: linear-gradient(135deg, var(--lightning-500) 0%, var(--lightning-400) 100%);
             border: none;
-            color: #0f1419;
-            box-shadow: 0 4px 14px rgba(247, 147, 30, 0.3);
+            color: var(--ocean-950);
+            box-shadow: 0 4px 14px rgba(255, 214, 10, 0.25);
         }
 
         .oauth-button.github:hover {
-            background: linear-gradient(135deg, #ff9f2e 0%, #F7931E 100%);
+            background: linear-gradient(135deg, var(--lightning-400) 0%, var(--lightning-300) 100%);
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(247, 147, 30, 0.4);
+            box-shadow: 0 8px 24px rgba(255, 214, 10, 0.35);
         }
 
         .oauth-button.github svg {
-            fill: #0f1419;
+            fill: var(--ocean-950);
         }
 
-        /* Microsoft - Secondary, outline style */
+        /* Microsoft - Secondary with mint border */
         .oauth-button.microsoft {
-            background: transparent;
-            border: 1px solid rgba(255,255,255,0.2);
-            color: #b8bcc8;
+            background: rgba(6, 255, 165, 0.05);
+            border: 1px solid rgba(6, 255, 165, 0.25);
+            color: var(--text-primary);
         }
 
         .oauth-button.microsoft:hover {
-            background: rgba(0, 120, 212, 0.1);
-            border-color: #0078d4;
-            color: #fff;
+            background: rgba(6, 255, 165, 0.12);
+            border-color: var(--mint-500);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(6, 255, 165, 0.15);
         }
 
         .oauth-icon {
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
             flex-shrink: 0;
         }
 
@@ -160,8 +182,8 @@
             display: flex;
             align-items: center;
             gap: 1rem;
-            margin: 1.5rem 0;
-            color: #6b7a94;
+            margin: 1.75rem 0;
+            color: var(--text-muted);
             font-size: 0.85rem;
         }
 
@@ -170,47 +192,48 @@
             content: '';
             flex: 1;
             height: 1px;
-            background: rgba(255,255,255,0.1);
+            background: linear-gradient(90deg, transparent, rgba(6, 255, 165, 0.2), transparent);
         }
 
         .form-group {
-            margin-bottom: 1rem;
+            margin-bottom: 1.25rem;
         }
 
         .form-group label {
             display: block;
-            color: #b8bcc8;
-            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
             font-weight: 500;
             margin-bottom: 0.5rem;
         }
 
         .form-group input {
             width: 100%;
-            padding: 0.875rem 1rem;
-            background: #0f1419;
-            border: 1px solid rgba(255,255,255,0.1);
+            padding: 0.9rem 1rem;
+            background: var(--ocean-950);
+            border: 1px solid rgba(144, 224, 239, 0.2);
             border-radius: 10px;
-            color: #e6e1dc;
+            color: var(--text-primary);
             font-size: 1rem;
             transition: all 0.2s ease;
         }
 
         .form-group input::placeholder {
-            color: #5c6775;
+            color: var(--text-muted);
+            opacity: 0.5;
         }
 
         .form-group input:focus {
             outline: none;
-            border-color: #f7931e;
-            box-shadow: 0 0 0 3px rgba(247, 147, 30, 0.1);
+            border-color: var(--mint-500);
+            box-shadow: 0 0 0 3px rgba(6, 255, 165, 0.15);
         }
 
         .submit-button {
             width: 100%;
-            padding: 0.875rem;
-            background: linear-gradient(135deg, #f7931e 0%, #e8850f 100%);
-            color: #0f1419;
+            padding: 1rem;
+            background: linear-gradient(135deg, var(--ocean-400) 0%, var(--ocean-300) 100%);
+            color: var(--text-primary);
             border: none;
             border-radius: 10px;
             font-size: 1rem;
@@ -224,62 +247,63 @@
         }
 
         .submit-button:hover {
-            background: linear-gradient(135deg, #ff9f2e 0%, #f7931e 100%);
+            background: linear-gradient(135deg, var(--ocean-300) 0%, var(--ocean-200) 100%);
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(247, 147, 30, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 150, 199, 0.3);
         }
 
         .register-link {
             text-align: center;
-            margin-top: 1.5rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid rgba(255,255,255,0.1);
-            color: #8b9ab4;
-            font-size: 0.9rem;
+            margin-top: 1.75rem;
+            padding-top: 1.75rem;
+            border-top: 1px solid rgba(6, 255, 165, 0.1);
+            color: var(--text-muted);
+            font-size: 0.95rem;
         }
 
         .register-link a {
-            color: #f7931e;
+            color: var(--mint-400);
             text-decoration: none;
             font-weight: 500;
         }
 
         .register-link a:hover {
+            color: var(--mint-300);
             text-decoration: underline;
         }
 
         .message {
-            padding: 1rem;
+            padding: 1rem 1.25rem;
             border-radius: 10px;
-            margin-bottom: 1rem;
+            margin-bottom: 1.25rem;
             text-align: center;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
         }
 
         .message.success {
-            background: rgba(54, 198, 146, 0.15);
-            border: 1px solid rgba(54, 198, 146, 0.3);
-            color: #36c692;
+            background: rgba(6, 255, 165, 0.12);
+            border: 1px solid rgba(6, 255, 165, 0.3);
+            color: var(--mint-400);
         }
 
         .message.error {
-            background: rgba(255, 85, 85, 0.15);
-            border: 1px solid rgba(255, 85, 85, 0.3);
-            color: #ff5555;
+            background: rgba(255, 0, 110, 0.12);
+            border: 1px solid rgba(255, 0, 110, 0.3);
+            color: #ff6b9d;
         }
 
         .token-display {
-            background: #0f1419;
+            background: var(--ocean-950);
             padding: 0.75rem;
             border-radius: 8px;
             word-break: break-all;
             font-family: 'SF Mono', Monaco, monospace;
-            font-size: 0.8rem;
-            margin-top: 0.5rem;
-            color: #e6e1dc;
+            font-size: 0.75rem;
+            margin-top: 0.75rem;
+            color: var(--mint-400);
+            border: 1px solid rgba(6, 255, 165, 0.15);
         }
 
-        /* Register page styles */
         .register-card {
             display: none;
         }
@@ -288,38 +312,81 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            color: #8b9ab4;
+            color: var(--text-muted);
             text-decoration: none;
             font-size: 0.9rem;
-            margin-bottom: 1rem;
+            margin-bottom: 1.25rem;
         }
 
         .back-link:hover {
-            color: #f7931e;
+            color: var(--mint-400);
         }
 
-        .footer-text {
+        /* Footer with CK Technology branding */
+        .footer-section {
             text-align: center;
-            margin-top: 2rem;
-            color: #5c6775;
-            font-size: 0.8rem;
+            margin-top: 2.5rem;
+        }
+
+        .footer-tagline {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 1.25rem;
+            opacity: 0.8;
+        }
+
+        .powered-by {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1.5rem;
+            background: rgba(255, 214, 10, 0.05);
+            border: 1px solid rgba(255, 214, 10, 0.15);
+            border-radius: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .powered-by:hover {
+            background: rgba(255, 214, 10, 0.08);
+            border-color: rgba(255, 214, 10, 0.25);
+        }
+
+        .powered-by-text {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+
+        .cktech-logo {
+            height: 28px;
+            width: auto;
+            filter: brightness(0.95);
+        }
+
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 1.75rem;
+            }
+
+            .logo-img {
+                width: 48px;
+                height: 48px;
+            }
+
+            .app-title {
+                font-size: 2rem;
+            }
         }
     </style>
 </head>
 <body>
     <div class="logo-section">
-        <svg class="zig-logo" viewBox="0 0 154 140" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M69.44 0L0 70L69.44 140H154L84.56 70L154 0H69.44Z" fill="#F7931E"/>
-            <path d="M40 46.5L58.5 70L40 93.5L21.5 70L40 46.5Z" fill="#0A0E14"/>
-            <path d="M114 46.5L132.5 70L114 93.5L95.5 70L114 46.5Z" fill="#0A0E14"/>
-        </svg>
-        <h1 class="app-title">Zepplin</h1>
-        <p class="app-subtitle">Zig Package Registry</p>
-        <div class="cktech-badge">
-            <span>Powered by</span>
-            <img src="/images/cktech-logo.png" alt="CK Technology" onerror="this.style.display='none'">
-            <span>CK Technology</span>
+        <div class="logo-container">
+            <img src="/images/zepplin-logo.svg" alt="Zepplin" class="logo-img">
+            <h1 class="app-title">Zepplin</h1>
         </div>
+        <p class="app-subtitle">Zig Package Registry</p>
     </div>
 
     <div class="login-container">
@@ -414,9 +481,13 @@
         </div>
     </div>
 
-    <p class="footer-text">
-        Blazing-fast package management for the Zig ecosystem
-    </p>
+    <div class="footer-section">
+        <p class="footer-tagline">Blazing-fast package management for the Zig ecosystem</p>
+        <div class="powered-by">
+            <span class="powered-by-text">Powered by</span>
+            <img src="/assets/CKTech-Logo_Brand.png" alt="CK Technology" class="cktech-logo">
+        </div>
+    </div>
 
     <script>
         const messageDiv = document.getElementById('message');
@@ -485,12 +556,11 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    showMessage(`Welcome back! Your API token:<div class="token-display">${data.token}</div>`, 'success');
+                    showMessage(`Welcome back! Redirecting...`, 'success');
                     localStorage.setItem('zepplin_token', data.token);
                     localStorage.setItem('zepplin_username', data.username);
-                    document.getElementById('loginForm').reset();
-                    // Redirect to home after 2 seconds
-                    setTimeout(() => window.location.href = '/', 2000);
+                    // Redirect to home
+                    setTimeout(() => window.location.href = '/', 1000);
                 } else {
                     showMessage(data.error || 'Login failed', 'error');
                 }
@@ -503,6 +573,14 @@
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('error')) {
             showMessage('Authentication failed: ' + (urlParams.get('error_description') || urlParams.get('error')), 'error');
+        }
+
+        // Check if already logged in
+        if (localStorage.getItem('zepplin_token')) {
+            const username = localStorage.getItem('zepplin_username') || localStorage.getItem('zepplin_display_name');
+            if (username) {
+                showMessage(`Already signed in as ${username}. <a href="/" style="color: var(--mint-400);">Go to home</a>`, 'success');
+            }
         }
     </script>
 </body>

@@ -7,7 +7,7 @@ const Storage = @import("../storage/storage.zig").Storage;
 const ZigistryClient = @import("../zigistry/client.zig").ZigistryClient;
 const ZiglibsImporter = @import("../tools/ziglibs_import.zig").ZiglibsImporter;
 
-const ZEPPLIN_VERSION = "0.6.4";
+const ZEPPLIN_VERSION = "0.6.5";
 
 const RouteHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) anyerror!void;
 const StaticHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8) anyerror!void;
@@ -2363,23 +2363,32 @@ pub const Server = struct {
         const auth_header_start = std.mem.indexOf(u8, request, "Authorization: ") orelse return null;
         const auth_line_end = std.mem.indexOf(u8, request[auth_header_start..], "\r\n") orelse return null;
         const auth_header = request[auth_header_start + 15..auth_header_start + auth_line_end];
-        
+
         // Extract Bearer token
         const token = Auth.extractBearerToken(auth_header) orelse return null;
-        
-        // Validate token
+
+        // Check if this is a JWT (has two dots separating three parts)
+        var dot_count: usize = 0;
+        for (token) |c| {
+            if (c == '.') dot_count += 1;
+        }
+
+        if (dot_count == 2) {
+            // This is a JWT from OAuth - validate and parse it
+            return self.validateJWTToken(token);
+        }
+
+        // Fall back to legacy API token validation
         const auth_token = self.auth.validateApiToken(token) catch return null;
         defer self.allocator.free(auth_token.token);
-        
-        // Get user info from database
-        // For now, we'll create dummy data based on user_id
-        // In a real implementation, you'd look this up in the database
+
+        // Get user info from database for legacy tokens
         const username = try std.fmt.allocPrint(self.allocator, "user_{}", .{auth_token.user_id});
         const email = try std.fmt.allocPrint(self.allocator, "user_{}@example.com", .{auth_token.user_id});
         const display_name = try std.fmt.allocPrint(self.allocator, "User {}", .{auth_token.user_id});
         const avatar_url = try self.allocator.dupe(u8, "");
         const provider = try self.allocator.dupe(u8, "local");
-        
+
         return AuthenticatedUser{
             .username = username,
             .user_id = auth_token.user_id,
@@ -2388,6 +2397,170 @@ pub const Server = struct {
             .avatar_url = avatar_url,
             .provider = provider,
         };
+    }
+
+    fn validateJWTToken(self: *Server, token: []const u8) !?AuthenticatedUser {
+        // Split JWT into parts: header.payload.signature
+        var parts = std.mem.splitSequence(u8, token, ".");
+        const header_b64 = parts.next() orelse return null;
+        const payload_b64 = parts.next() orelse return null;
+        const signature_b64 = parts.next() orelse return null;
+
+        // Get JWT secret from environment
+        const jwt_secret = self.environ_map.get("JWT_SECRET") orelse "change-me-in-production";
+
+        // Verify signature - signing input is "header.payload"
+        const signing_input = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{
+            header_b64,
+            payload_b64
+        });
+        defer self.allocator.free(signing_input);
+
+        var hmac = std.crypto.auth.hmac.sha2.HmacSha256.init(jwt_secret);
+        hmac.update(signing_input);
+        var expected_signature: [32]u8 = undefined;
+        hmac.final(&expected_signature);
+
+        var exp_buf: [64]u8 = undefined;
+        const expected_encoded = std.base64.url_safe_no_pad.Encoder.encode(&exp_buf, &expected_signature);
+
+        if (!std.mem.eql(u8, signature_b64, expected_encoded)) {
+            std.debug.print("JWT signature validation failed\n", .{});
+            return null;
+        }
+
+        // Decode payload
+        const decoder = std.base64.url_safe_no_pad.Decoder;
+        const decoded_len = decoder.calcSizeForSlice(payload_b64) catch return null;
+        const payload = try self.allocator.alloc(u8, decoded_len);
+        defer self.allocator.free(payload);
+        decoder.decode(payload, payload_b64) catch return null;
+
+        // Parse JSON payload to extract user data
+        // Look for: "sub", "username", "email", "display_name", "avatar_url", "provider", "exp"
+        var user_id: i64 = 0;
+        var username: []u8 = try self.allocator.dupe(u8, "unknown");
+        var email: []u8 = try self.allocator.dupe(u8, "");
+        var display_name: []u8 = try self.allocator.dupe(u8, "");
+        var avatar_url: []u8 = try self.allocator.dupe(u8, "");
+        var provider: []u8 = try self.allocator.dupe(u8, "oauth");
+        var exp: i64 = 0;
+
+        // Simple JSON parsing (field by field)
+        if (self.extractJsonString(payload, "username")) |val| {
+            self.allocator.free(username);
+            username = try self.allocator.dupe(u8, val);
+        }
+        if (self.extractJsonString(payload, "email")) |val| {
+            self.allocator.free(email);
+            email = try self.allocator.dupe(u8, val);
+        }
+        if (self.extractJsonString(payload, "display_name")) |val| {
+            self.allocator.free(display_name);
+            display_name = try self.allocator.dupe(u8, val);
+        }
+        if (self.extractJsonString(payload, "avatar_url")) |val| {
+            self.allocator.free(avatar_url);
+            avatar_url = try self.allocator.dupe(u8, val);
+        }
+        if (self.extractJsonString(payload, "provider")) |val| {
+            self.allocator.free(provider);
+            provider = try self.allocator.dupe(u8, val);
+        }
+        if (self.extractJsonInt(payload, "sub")) |val| {
+            user_id = val;
+        }
+        if (self.extractJsonInt(payload, "exp")) |val| {
+            exp = val;
+        }
+
+        // Check expiration
+        const now = compat.timestamp();
+        if (exp > 0 and now > exp) {
+            std.debug.print("JWT token expired: now={} exp={}\n", .{now, exp});
+            self.allocator.free(username);
+            self.allocator.free(email);
+            self.allocator.free(display_name);
+            self.allocator.free(avatar_url);
+            self.allocator.free(provider);
+            return null;
+        }
+
+        return AuthenticatedUser{
+            .username = username,
+            .user_id = user_id,
+            .email = email,
+            .display_name = display_name,
+            .avatar_url = avatar_url,
+            .provider = provider,
+        };
+    }
+
+    fn extractJsonString(self: *Server, json: []const u8, key: []const u8) ?[]const u8 {
+        _ = self;
+        // Look for "key": "value" pattern by scanning for the key
+        var pos: usize = 0;
+        while (pos < json.len) {
+            const quote_pos = std.mem.indexOf(u8, json[pos..], "\"") orelse return null;
+            const abs_quote_pos = pos + quote_pos;
+
+            // Check if key matches after this quote
+            if (abs_quote_pos + 1 + key.len + 1 <= json.len) {
+                if (std.mem.eql(u8, json[abs_quote_pos + 1 .. abs_quote_pos + 1 + key.len], key) and
+                    json[abs_quote_pos + 1 + key.len] == '"')
+                {
+                    // Found the key, now find the value
+                    const after_key = json[abs_quote_pos + 2 + key.len ..];
+                    // Skip colon and whitespace
+                    var idx: usize = 0;
+                    while (idx < after_key.len and (after_key[idx] == ':' or after_key[idx] == ' ' or after_key[idx] == '\n' or after_key[idx] == '\t')) {
+                        idx += 1;
+                    }
+                    if (idx >= after_key.len or after_key[idx] != '"') return null;
+                    idx += 1;
+                    // Find closing quote
+                    const end_offset = std.mem.indexOf(u8, after_key[idx..], "\"") orelse return null;
+                    return after_key[idx .. idx + end_offset];
+                }
+            }
+            pos = abs_quote_pos + 1;
+        }
+        return null;
+    }
+
+    fn extractJsonInt(self: *Server, json: []const u8, key: []const u8) ?i64 {
+        _ = self;
+        // Look for "key": value pattern by scanning for the key
+        var pos: usize = 0;
+        while (pos < json.len) {
+            const quote_pos = std.mem.indexOf(u8, json[pos..], "\"") orelse return null;
+            const abs_quote_pos = pos + quote_pos;
+
+            // Check if key matches after this quote
+            if (abs_quote_pos + 1 + key.len + 1 <= json.len) {
+                if (std.mem.eql(u8, json[abs_quote_pos + 1 .. abs_quote_pos + 1 + key.len], key) and
+                    json[abs_quote_pos + 1 + key.len] == '"')
+                {
+                    // Found the key, now find the numeric value
+                    const after_key = json[abs_quote_pos + 2 + key.len ..];
+                    // Skip colon and whitespace
+                    var idx: usize = 0;
+                    while (idx < after_key.len and (after_key[idx] == ':' or after_key[idx] == ' ' or after_key[idx] == '\n' or after_key[idx] == '\t')) {
+                        idx += 1;
+                    }
+                    if (idx >= after_key.len) return null;
+                    // Find end of number
+                    var end_idx: usize = idx;
+                    while (end_idx < after_key.len and after_key[end_idx] != ',' and after_key[end_idx] != '}' and after_key[end_idx] != '\n' and after_key[end_idx] != ' ') {
+                        end_idx += 1;
+                    }
+                    const num_str = std.mem.trim(u8, after_key[idx..end_idx], " \t\n\"");
+                    return std.fmt.parseInt(i64, num_str, 10) catch return null;
+                }
+            }
+            pos = abs_quote_pos + 1;
+        }
+        return null;
     }
     
     fn requireAuth(self: *Server, stream: std.Io.net.Stream, request: []const u8) !?AuthenticatedUser {

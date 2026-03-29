@@ -5,6 +5,26 @@ All notable changes to Zepplin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5] - 2026-03-29
+
+### Fixed
+
+- **OAuth JWT Token Validation**: Fixed JWT token validation so OAuth logins actually work
+  - `validateAuthToken()` now detects JWT format (two dots) vs legacy token format
+  - Added `validateJWTToken()` to properly parse JWT payload and extract user data
+  - Extracts username, email, display_name, avatar_url, provider from JWT claims
+  - Uses same JWT secret as token creation for signature verification
+- **Login Page Design**: Updated auth.html with professional theme matching site colors
+  - Deep Ocean Blue, Lightning Yellow, and Mint Green color scheme
+  - Professional zeppelin + lightning SVG logo
+  - Larger CK Technology branding in footer
+
+### Changed
+
+- **Version Sync**: Synchronized version to 0.6.5 across all files:
+  - build.zig.zon, src/root.zig, src/server/server.zig
+  - src/zigistry/client.zig, docker-compose.yml
+
 ## [0.6.4] - 2026-03-29
 
 ### Fixed
