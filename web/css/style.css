@@ -40,7 +40,7 @@
     --error: #ff006e;
     
     /* Layout */
-    --header-height: 72px;
+    --header-height: 90px;
     --container-max-width: 1280px;
     --border-radius-lg: 16px;
     --border-radius-md: 12px;
@@ -147,9 +147,9 @@ a:hover {
 }
 
 .logo-img {
-    height: 44px;
+    height: 70px;
     width: auto;
-    filter: drop-shadow(0 0 12px rgba(255, 214, 10, 0.6));
+    filter: drop-shadow(0 0 15px rgba(255, 214, 10, 0.6));
     transition: var(--transition-base);
 }
 
