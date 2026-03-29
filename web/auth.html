@@ -56,43 +56,44 @@
 
         .logo-section {
             text-align: center;
-            margin-bottom: 3rem;
+            margin-bottom: 4rem;
+            padding-top: 1rem;
         }
 
         .logo-container {
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 1.5rem;
+            margin-bottom: 2rem;
         }
 
         .logo-img {
-            width: 180px;
-            height: 180px;
-            filter: drop-shadow(0 0 20px rgba(255, 214, 10, 0.5));
+            width: 220px;
+            height: 220px;
+            filter: drop-shadow(0 0 35px rgba(255, 214, 10, 0.6));
         }
 
         .app-title {
-            font-size: 3.5rem;
+            font-size: 3.75rem;
             font-weight: 800;
             background: linear-gradient(135deg, var(--lightning-500) 0%, var(--lightning-300) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
             letter-spacing: -0.02em;
-            margin-bottom: 0.5rem;
+            margin-bottom: 1rem;
         }
 
         .app-subtitle {
             color: var(--text-muted);
-            font-size: 1.25rem;
-            margin-top: 0.5rem;
-            letter-spacing: 0.05em;
+            font-size: 1.35rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
         }
 
         .login-container {
             width: 100%;
-            max-width: 420px;
+            max-width: 440px;
         }
 
         .login-card {
@@ -100,7 +101,7 @@
             backdrop-filter: blur(20px);
             border: 1px solid rgba(6, 255, 165, 0.15);
             border-radius: 20px;
-            padding: 2.5rem;
+            padding: 2.75rem;
             box-shadow:
                 0 25px 50px -12px rgba(0, 0, 0, 0.7),
                 0 0 40px rgba(0, 119, 182, 0.1);
@@ -108,7 +109,7 @@
 
         .welcome-text {
             text-align: center;
-            margin-bottom: 2rem;
+            margin-bottom: 2.25rem;
         }
 
         .welcome-text h2 {
@@ -369,21 +370,31 @@
         }
 
         @media (max-width: 480px) {
+            .logo-section {
+                margin-bottom: 2.5rem;
+            }
+
+            .logo-container {
+                margin-bottom: 1.5rem;
+            }
+
             .login-card {
-                padding: 1.75rem;
+                padding: 2rem;
             }
 
             .logo-img {
-                width: 120px;
-                height: 120px;
+                width: 140px;
+                height: 140px;
             }
 
             .app-title {
-                font-size: 2.5rem;
+                font-size: 2.75rem;
+                margin-bottom: 0.75rem;
             }
 
             .app-subtitle {
-                font-size: 1.1rem;
+                font-size: 1rem;
+                letter-spacing: 0.1em;
             }
         }
     </style>
