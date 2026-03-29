@@ -470,8 +470,6 @@ pub const Server = struct {
 
         std.debug.print("🚀 Zepplin Registry Server starting on http://localhost:{}\n", .{self.address.getPort()});
         std.debug.print("📦 Ready to serve packages!\n", .{});
-        std.debug.print("🔧 Configuration loaded from environment variables (if set)\n", .{});
-        std.debug.print("⚠️  Using default secret key - set ZEPPLIN_SECRET_KEY for production!\n", .{});
 
         while (true) {
             const stream = net_server.accept(self.io) catch |err| {

@@ -36,23 +36,20 @@ COPY assets/ ./assets/
 # Build the application with optimizations
 RUN zig build -Doptimize=ReleaseFast
 
-# Runtime stage - minimal Alpine with SQLite
-FROM alpine:3.19
+# Runtime stage - Debian for glibc compatibility with Zig 0.16 std.Io
+FROM debian:bookworm-slim
 
-# Install runtime dependencies including SQLite development libraries
-RUN apk add --no-cache \
-  sqlite \
-  sqlite-dev \
-  sqlite-libs \
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  libsqlite3-0 \
   ca-certificates \
-  tzdata \
   curl \
   wget \
-  && rm -rf /var/cache/apk/*
+  && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
-RUN addgroup -g 1001 zepplin && \
-  adduser -D -s /bin/sh -u 1001 -G zepplin zepplin
+RUN groupadd -g 1001 zepplin && \
+  useradd -m -s /bin/bash -u 1001 -g zepplin zepplin
 
 # Create application directories with proper permissions
 RUN mkdir -p /app/data /app/logs && \
