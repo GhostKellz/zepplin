@@ -2425,9 +2425,14 @@ pub const Server = struct {
         const expected_encoded = std.base64.url_safe_no_pad.Encoder.encode(&exp_buf, &expected_signature);
 
         if (!std.mem.eql(u8, signature_b64, expected_encoded)) {
-            std.debug.print("JWT signature validation failed\n", .{});
+            std.debug.print("JWT validation failed:\n  secret_len={}\n  expected={s}\n  actual={s}\n", .{
+                jwt_secret.len,
+                expected_encoded,
+                signature_b64,
+            });
             return null;
         }
+        std.debug.print("JWT validation successful for token\n", .{});
 
         // Decode payload
         const decoder = std.base64.url_safe_no_pad.Decoder;

@@ -238,10 +238,12 @@ pub const UnifiedAuthSystem = struct {
         hmac.update(signing_input);
         var signature: [32]u8 = undefined;
         hmac.final(&signature);
-        
+
         var sig_buf: [64]u8 = undefined;
         const signature_encoded = std.base64.url_safe_no_pad.Encoder.encode(&sig_buf, &signature);
-        
+
+        std.debug.print("JWT created: secret_len={} sig={s}\n", .{self.jwt_secret.len, signature_encoded});
+
         // Combine all parts
         return std.fmt.allocPrint(
             self.allocator,
