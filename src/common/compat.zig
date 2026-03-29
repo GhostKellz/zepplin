@@ -7,10 +7,13 @@ pub fn streamWriteAll(stream: std.Io.net.Stream, io: std.Io, data: []const u8) !
     const fd = stream.socket.handle;
     var written: usize = 0;
     while (written < data.len) {
-        const result = std.posix.write(fd, data[written..]) catch |err| {
-            std.debug.print("❌ Write error: {}\n", .{err});
+        const remaining = data[written..];
+        const result = std.os.linux.write(fd, remaining.ptr, remaining.len);
+        const signed_result: isize = @bitCast(result);
+        if (signed_result < 0) {
+            std.debug.print("❌ Write error: {}\n", .{signed_result});
             return error.WriteFailed;
-        };
+        }
         if (result == 0) {
             return error.WriteFailed;
         }
