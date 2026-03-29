@@ -7,7 +7,7 @@ const Storage = @import("../storage/storage.zig").Storage;
 const ZigistryClient = @import("../zigistry/client.zig").ZigistryClient;
 const ZiglibsImporter = @import("../tools/ziglibs_import.zig").ZiglibsImporter;
 
-const ZEPPLIN_VERSION = "0.6.3";
+const ZEPPLIN_VERSION = "0.6.4";
 
 const RouteHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) anyerror!void;
 const StaticHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8) anyerror!void;

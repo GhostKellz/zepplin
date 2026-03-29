@@ -204,7 +204,7 @@ pub const ZigistryClient = struct {
 
         const headers = [_]std.http.Header{
             .{ .name = "Accept", .value = "application/json" },
-            .{ .name = "User-Agent", .value = "Zepplin-Registry/0.6.3" },
+            .{ .name = "User-Agent", .value = "Zepplin-Registry/0.6.4" },
         };
 
         var req = try client.request(.GET, uri, .{ .extra_headers = &headers });

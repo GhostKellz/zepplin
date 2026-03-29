@@ -3,195 +3,342 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zepplin Auth - Test Page</title>
+    <title>Sign In - Zepplin Registry</title>
+    <link rel="icon" type="image/svg+xml" href="/images/zepplin-logo.svg">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-            background: #0f1419; 
-            color: #e6e1dc; 
-            display: flex;
-            justify-content: center;
-            align-items: center;
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0e14;
+            background-image:
+                radial-gradient(ellipse at top, rgba(247, 147, 30, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom right, rgba(247, 147, 30, 0.05) 0%, transparent 40%);
+            color: #e6e1dc;
             min-height: 100vh;
-        }
-        .container { 
-            max-width: 400px; 
-            width: 100%;
-            padding: 2rem; 
-        }
-        .form-card {
-            background: #1e2328;
-            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             padding: 2rem;
-            margin-bottom: 2rem;
         }
-        h2 {
-            color: #f7931e;
-            margin-bottom: 1.5rem;
+
+        .logo-section {
             text-align: center;
+            margin-bottom: 1.5rem;
         }
-        .form-group {
-            margin-bottom: 1rem;
-        }
-        label {
-            display: block;
-            color: #b8b4a3;
+
+        .zig-logo {
+            width: 80px;
+            height: auto;
             margin-bottom: 0.5rem;
         }
-        input {
-            width: 100%;
-            padding: 0.75rem;
-            background: #0f1419;
-            border: 1px solid #39414a;
-            border-radius: 4px;
-            color: #e6e1dc;
+
+        .app-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #f7931e 0%, #ffb84d 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.25rem;
+        }
+
+        .app-subtitle {
+            color: #8b9ab4;
             font-size: 1rem;
+            font-weight: 400;
         }
-        input:focus {
-            outline: none;
-            border-color: #36c692;
+
+        .cktech-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            font-size: 0.8rem;
+            color: #6b7a94;
         }
-        button {
+
+        .cktech-badge img {
+            height: 20px;
+            width: auto;
+        }
+
+        .login-container {
             width: 100%;
-            padding: 0.75rem;
-            background: #36c692;
-            color: #0f1419;
-            border: none;
-            border-radius: 4px;
-            font-size: 1rem;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.3s;
+            max-width: 400px;
         }
-        button:hover {
-            background: #f7931e;
+
+        .login-card {
+            background: rgba(30, 35, 44, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
-        .oauth-divider {
+
+        .welcome-text {
             text-align: center;
-            margin: 1.5rem 0;
-            color: #666;
-            position: relative;
+            margin-bottom: 1.5rem;
         }
-        .oauth-divider::before,
-        .oauth-divider::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            width: 40%;
-            height: 1px;
-            background: #39414a;
+
+        .welcome-text h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 0.25rem;
         }
-        .oauth-divider::before {
-            left: 0;
+
+        .welcome-text p {
+            color: #8b9ab4;
+            font-size: 0.9rem;
         }
-        .oauth-divider::after {
-            right: 0;
-        }
+
         .oauth-buttons {
             display: flex;
             flex-direction: column;
             gap: 0.75rem;
+            margin-bottom: 1.5rem;
         }
+
         .oauth-button {
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 0.75rem;
-            padding: 0.75rem;
-            background: #1e2328;
-            border: 1px solid #39414a;
-            border-radius: 4px;
-            color: #e6e1dc;
+            padding: 0.875rem 1rem;
+            border-radius: 10px;
             text-decoration: none;
-            transition: all 0.3s;
+            font-size: 0.95rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            cursor: pointer;
         }
-        .oauth-button:hover {
-            background: #2a3038;
-            border-color: #36c692;
-        }
-        .oauth-button.microsoft {
-            border-color: #0078d4;
-        }
-        .oauth-button.microsoft:hover {
-            background: #0078d4;
-            color: white;
-        }
+
+        /* GitHub - Primary action, Zig orange */
         .oauth-button.github {
-            border-color: #333;
+            background: linear-gradient(135deg, #F7931E 0%, #e8850f 100%);
+            border: none;
+            color: #0f1419;
+            box-shadow: 0 4px 14px rgba(247, 147, 30, 0.3);
         }
+
         .oauth-button.github:hover {
-            background: #333;
-            color: white;
+            background: linear-gradient(135deg, #ff9f2e 0%, #F7931E 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(247, 147, 30, 0.4);
         }
+
+        .oauth-button.github svg {
+            fill: #0f1419;
+        }
+
+        /* Microsoft - Secondary, outline style */
+        .oauth-button.microsoft {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #b8bcc8;
+        }
+
+        .oauth-button.microsoft:hover {
+            background: rgba(0, 120, 212, 0.1);
+            border-color: #0078d4;
+            color: #fff;
+        }
+
         .oauth-icon {
             width: 20px;
             height: 20px;
+            flex-shrink: 0;
         }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1.5rem 0;
+            color: #6b7a94;
+            font-size: 0.85rem;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: rgba(255,255,255,0.1);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            color: #b8bcc8;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            background: #0f1419;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            color: #e6e1dc;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .form-group input::placeholder {
+            color: #5c6775;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #f7931e;
+            box-shadow: 0 0 0 3px rgba(247, 147, 30, 0.1);
+        }
+
+        .submit-button {
+            width: 100%;
+            padding: 0.875rem;
+            background: linear-gradient(135deg, #f7931e 0%, #e8850f 100%);
+            color: #0f1419;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .submit-button:hover {
+            background: linear-gradient(135deg, #ff9f2e 0%, #f7931e 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(247, 147, 30, 0.3);
+        }
+
+        .register-link {
+            text-align: center;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: #8b9ab4;
+            font-size: 0.9rem;
+        }
+
+        .register-link a {
+            color: #f7931e;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .register-link a:hover {
+            text-decoration: underline;
+        }
+
         .message {
             padding: 1rem;
-            border-radius: 4px;
+            border-radius: 10px;
             margin-bottom: 1rem;
             text-align: center;
+            font-size: 0.9rem;
         }
-        .success {
-            background: #36c692;
-            color: #0f1419;
+
+        .message.success {
+            background: rgba(54, 198, 146, 0.15);
+            border: 1px solid rgba(54, 198, 146, 0.3);
+            color: #36c692;
         }
-        .error {
-            background: #ff5555;
-            color: #f8f8f2;
+
+        .message.error {
+            background: rgba(255, 85, 85, 0.15);
+            border: 1px solid rgba(255, 85, 85, 0.3);
+            color: #ff5555;
         }
+
         .token-display {
             background: #0f1419;
-            padding: 1rem;
-            border-radius: 4px;
+            padding: 0.75rem;
+            border-radius: 8px;
             word-break: break-all;
-            font-family: monospace;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+            color: #e6e1dc;
+        }
+
+        /* Register page styles */
+        .register-card {
+            display: none;
+        }
+
+        .back-link {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #8b9ab4;
+            text-decoration: none;
             font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        .back-link:hover {
+            color: #f7931e;
+        }
+
+        .footer-text {
+            text-align: center;
+            margin-top: 2rem;
+            color: #5c6775;
+            font-size: 0.8rem;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div id="message"></div>
-        
-        <div class="form-card">
-            <h2>Register</h2>
-            <form id="registerForm">
-                <div class="form-group">
-                    <label for="reg-username">Username</label>
-                    <input type="text" id="reg-username" required>
-                </div>
-                <div class="form-group">
-                    <label for="reg-email">Email</label>
-                    <input type="email" id="reg-email" required>
-                </div>
-                <div class="form-group">
-                    <label for="reg-password">Password</label>
-                    <input type="password" id="reg-password" required>
-                </div>
-                <button type="submit">Register</button>
-            </form>
+    <div class="logo-section">
+        <svg class="zig-logo" viewBox="0 0 154 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M69.44 0L0 70L69.44 140H154L84.56 70L154 0H69.44Z" fill="#F7931E"/>
+            <path d="M40 46.5L58.5 70L40 93.5L21.5 70L40 46.5Z" fill="#0A0E14"/>
+            <path d="M114 46.5L132.5 70L114 93.5L95.5 70L114 46.5Z" fill="#0A0E14"/>
+        </svg>
+        <h1 class="app-title">Zepplin</h1>
+        <p class="app-subtitle">Zig Package Registry</p>
+        <div class="cktech-badge">
+            <span>Powered by</span>
+            <img src="/images/cktech-logo.png" alt="CK Technology" onerror="this.style.display='none'">
+            <span>CK Technology</span>
         </div>
+    </div>
 
-        <div class="form-card">
-            <h2>Login</h2>
-            <form id="loginForm">
-                <div class="form-group">
-                    <label for="login-username">Username</label>
-                    <input type="text" id="login-username" required>
-                </div>
-                <div class="form-group">
-                    <label for="login-password">Password</label>
-                    <input type="password" id="login-password" required>
-                </div>
-                <button type="submit">Login</button>
-            </form>
-            
-            <div class="oauth-divider">or</div>
-            
+    <div class="login-container">
+        <div id="message"></div>
+
+        <!-- Login Card -->
+        <div class="login-card" id="loginCard">
+            <div class="welcome-text">
+                <h2>Welcome back</h2>
+                <p>Sign in to your account</p>
+            </div>
+
             <div class="oauth-buttons">
+                <a href="/api/v1/auth/oauth/github/login" class="oauth-button github">
+                    <svg class="oauth-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    Sign in with GitHub
+                </a>
                 <a href="/api/v1/auth/oidc/microsoft/login" class="oauth-button microsoft">
                     <svg class="oauth-icon" viewBox="0 0 23 23">
                         <rect x="1" y="1" width="10" height="10" fill="#f25022"/>
@@ -201,29 +348,103 @@
                     </svg>
                     Sign in with Microsoft
                 </a>
-                <a href="/api/v1/auth/oauth/github/login" class="oauth-button github">
-                    <svg class="oauth-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+            </div>
+
+            <div class="divider">or continue with email</div>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="login-username">Username or Email</label>
+                    <input type="text" id="login-username" placeholder="Enter your username" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" placeholder="Enter your password" required>
+                </div>
+                <button type="submit" class="submit-button">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                        <polyline points="10 17 15 12 10 7"/>
+                        <line x1="15" y1="12" x2="3" y2="12"/>
                     </svg>
-                    Sign in with GitHub
-                </a>
+                    Sign In
+                </button>
+            </form>
+
+            <div class="register-link">
+                New to Zepplin? <a href="#" onclick="showRegister(); return false;">Create an account</a>
+            </div>
+        </div>
+
+        <!-- Register Card -->
+        <div class="login-card register-card" id="registerCard">
+            <a href="#" class="back-link" onclick="showLogin(); return false;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+                Back to sign in
+            </a>
+
+            <div class="welcome-text">
+                <h2>Create account</h2>
+                <p>Join the Zig package ecosystem</p>
+            </div>
+
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="reg-username">Username</label>
+                    <input type="text" id="reg-username" placeholder="Choose a username" required>
+                </div>
+                <div class="form-group">
+                    <label for="reg-email">Email</label>
+                    <input type="email" id="reg-email" placeholder="you@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="reg-password">Password</label>
+                    <input type="password" id="reg-password" placeholder="Create a password" required>
+                </div>
+                <button type="submit" class="submit-button">
+                    Create Account
+                </button>
+            </form>
+
+            <div class="register-link">
+                Already have an account? <a href="#" onclick="showLogin(); return false;">Sign in</a>
             </div>
         </div>
     </div>
 
+    <p class="footer-text">
+        Blazing-fast package management for the Zig ecosystem
+    </p>
+
     <script>
         const messageDiv = document.getElementById('message');
+        const loginCard = document.getElementById('loginCard');
+        const registerCard = document.getElementById('registerCard');
 
         function showMessage(text, type) {
             messageDiv.innerHTML = `<div class="message ${type}">${text}</div>`;
             if (type === 'success') {
-                setTimeout(() => messageDiv.innerHTML = '', 5000);
+                setTimeout(() => messageDiv.innerHTML = '', 8000);
             }
+        }
+
+        function showRegister() {
+            loginCard.style.display = 'none';
+            registerCard.style.display = 'block';
+            messageDiv.innerHTML = '';
+        }
+
+        function showLogin() {
+            registerCard.style.display = 'none';
+            loginCard.style.display = 'block';
+            messageDiv.innerHTML = '';
         }
 
         document.getElementById('registerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const username = document.getElementById('reg-username').value;
             const email = document.getElementById('reg-email').value;
             const password = document.getElementById('reg-password').value;
@@ -231,16 +452,14 @@
             try {
                 const response = await fetch('/api/v1/auth/register', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, email, password })
                 });
 
                 const data = await response.json();
 
                 if (response.ok) {
-                    showMessage(`Registration successful! Your API token:<div class="token-display">${data.token}</div>`, 'success');
+                    showMessage(`Account created! Your API token:<div class="token-display">${data.token}</div>`, 'success');
                     document.getElementById('registerForm').reset();
                 } else {
                     showMessage(data.error || 'Registration failed', 'error');
@@ -252,26 +471,26 @@
 
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const username = document.getElementById('login-username').value;
             const password = document.getElementById('login-password').value;
 
             try {
                 const response = await fetch('/api/v1/auth/login', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
                 });
 
                 const data = await response.json();
 
                 if (response.ok) {
-                    showMessage(`Login successful! Your API token:<div class="token-display">${data.token}</div>`, 'success');
+                    showMessage(`Welcome back! Your API token:<div class="token-display">${data.token}</div>`, 'success');
                     localStorage.setItem('zepplin_token', data.token);
                     localStorage.setItem('zepplin_username', data.username);
                     document.getElementById('loginForm').reset();
+                    // Redirect to home after 2 seconds
+                    setTimeout(() => window.location.href = '/', 2000);
                 } else {
                     showMessage(data.error || 'Login failed', 'error');
                 }
@@ -279,6 +498,12 @@
                 showMessage('Network error: ' + error.message, 'error');
             }
         });
+
+        // Check URL for OAuth errors
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('error')) {
+            showMessage('Authentication failed: ' + (urlParams.get('error_description') || urlParams.get('error')), 'error');
+        }
     </script>
 </body>
 </html>

@@ -13,7 +13,7 @@ pub const config = @import("config/toml.zig");
 pub const zigistry = @import("zigistry/client.zig");
 
 pub fn getVersion() []const u8 {
-    return "0.6.3";
+    return "0.6.4";
 }
 
 pub fn printBanner() void {

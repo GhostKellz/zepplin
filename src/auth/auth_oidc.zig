@@ -112,55 +112,91 @@ pub const OIDCClient = struct {
         std.debug.print("🔄 Starting Microsoft token exchange...\n", .{});
         var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
-        
+
         // Build token endpoint URL
         const token_url = try std.fmt.allocPrint(self.allocator, "{s}/oauth2/v2.0/token", .{self.config.authority});
         defer self.allocator.free(token_url);
         std.debug.print("🌐 Token URL: {s}\n", .{token_url});
-        
+
+        // URL encode redirect_uri for the POST body
+        const encoded_redirect = try urlEncode(self.allocator, self.config.redirect_uri);
+        defer self.allocator.free(encoded_redirect);
+
         // Build request body
         const body = try std.fmt.allocPrint(self.allocator,
             "grant_type=authorization_code&code={s}&redirect_uri={s}&client_id={s}&client_secret={s}",
-            .{ code, self.config.redirect_uri, self.config.client_id, self.config.client_secret }
+            .{ code, encoded_redirect, self.config.client_id, self.config.client_secret }
         );
         defer self.allocator.free(body);
-        
+
         const uri = try std.Uri.parse(token_url);
-        
+
         const headers = [_]std.http.Header{
             .{ .name = "Content-Type", .value = "application/x-www-form-urlencoded" },
         };
-        
+
         std.debug.print("📨 Making POST request to Microsoft token endpoint...\n", .{});
         var req = try client.request(.POST, uri, .{ .extra_headers = &headers });
         defer req.deinit();
-        
+
         req.transfer_encoding = .{ .content_length = body.len };
         try req.sendBodyComplete(body);
         std.debug.print("📤 Request sent, waiting for response...\n", .{});
-        
+
         var redirect_buffer: [1024]u8 = undefined;
-        const response = try req.receiveHead(&redirect_buffer);
+        var response = req.receiveHead(&redirect_buffer) catch |err| {
+            std.debug.print("❌ Microsoft: Failed to receive response: {}\n", .{err});
+            return error.TokenExchangeFailed;
+        };
         std.debug.print("📥 Response status: {}\n", .{response.head.status});
-        
+
+        // Read response body using streamRemaining
+        var response_writer: std.Io.Writer.Allocating = .init(self.allocator);
+        defer response_writer.deinit();
+
+        var transfer_buffer: [4096]u8 = undefined;
+        var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+        var decompress: std.http.Decompress = undefined;
+        const body_reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
+
+        _ = body_reader.streamRemaining(&response_writer.writer) catch |err| {
+            std.debug.print("❌ Microsoft: Failed to read body: {}\n", .{err});
+            if (response.bodyErr()) |body_err| {
+                std.debug.print("❌ Microsoft body error details: {}\n", .{body_err});
+            }
+            return error.TokenExchangeFailed;
+        };
+
+        const response_body = response_writer.written();
+
         if (response.head.status != .ok) {
             std.debug.print("❌ Token exchange failed with status: {}\n", .{response.head.status});
+            std.debug.print("❌ Microsoft error response: {s}\n", .{response_body});
             return error.TokenExchangeFailed;
         }
-        
-        var transfer_buffer: [4096]u8 = undefined;
-        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
-        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
-        defer self.allocator.free(response_body);
-        
+
         // Parse JSON response
         std.debug.print("📄 Parsing Microsoft token response...\n", .{});
-        std.debug.print("📄 Response body: {s}\n", .{response_body});
-        const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
+        std.debug.print("📄 Response body length: {}\n", .{response_body.len});
+
+        const parsed = std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{}) catch |err| {
+            std.debug.print("❌ Microsoft: JSON parse error: {}\n", .{err});
+            std.debug.print("❌ Response was: {s}\n", .{response_body});
+            return error.TokenExchangeFailed;
+        };
         defer parsed.deinit();
-        
+
         const obj = parsed.value.object;
-        
+
+        // Check for error in response
+        if (obj.get("error")) |err_val| {
+            std.debug.print("❌ Microsoft OAuth error: {s}\n", .{err_val.string});
+            if (obj.get("error_description")) |desc| {
+                std.debug.print("❌ Microsoft error description: {s}\n", .{desc.string});
+            }
+            return error.TokenExchangeFailed;
+        }
+
         std.debug.print("✅ Microsoft token exchange successful\n", .{});
         return OIDCTokenResponse{
             .access_token = try self.allocator.dupe(u8, obj.get("access_token").?.string),
@@ -175,35 +211,46 @@ pub const OIDCClient = struct {
     pub fn getUserInfo(self: *OIDCClient, access_token: []const u8) !OIDCUserInfo {
         var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
-        
+
         // Use Microsoft Graph API to get user info
         const userinfo_url = "https://graph.microsoft.com/v1.0/me";
         const uri = try std.Uri.parse(userinfo_url);
-        
+
         const auth_header = try std.fmt.allocPrint(self.allocator, "Bearer {s}", .{access_token});
         defer self.allocator.free(auth_header);
-        
+
         const headers = [_]std.http.Header{
             .{ .name = "Authorization", .value = auth_header },
         };
-        
+
         var req = try client.request(.GET, uri, .{ .extra_headers = &headers });
         defer req.deinit();
-        
+
         try req.sendBodiless();
-        
+
         var redirect_buffer: [1024]u8 = undefined;
-        const response = try req.receiveHead(&redirect_buffer);
-        
+        var response = try req.receiveHead(&redirect_buffer);
+
         if (response.head.status != .ok) {
             std.debug.print("User info request failed with status: {}\n", .{response.head.status});
             return error.UserInfoFailed;
         }
-        
+
+        // Read response body using streamRemaining
+        var response_writer: std.Io.Writer.Allocating = .init(self.allocator);
+        defer response_writer.deinit();
+
         var transfer_buffer: [4096]u8 = undefined;
-        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
-        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
-        defer self.allocator.free(response_body);
+        var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+        var decompress: std.http.Decompress = undefined;
+        const body_reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
+
+        _ = body_reader.streamRemaining(&response_writer.writer) catch |err| {
+            std.debug.print("Microsoft: Failed to read user info body: {}\n", .{err});
+            return error.UserInfoFailed;
+        };
+
+        const response_body = response_writer.written();
         
         // Parse JSON response from Microsoft Graph
         const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
@@ -223,7 +270,7 @@ pub const OIDCClient = struct {
         };
     }
     
-    pub fn refreshToken(self: *OIDCClient, refresh_token: []const u8) !OIDCTokenResponse {
+    pub fn refreshToken(self: *OIDCClient, refresh_token_value: []const u8) !OIDCTokenResponse {
         var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
 
@@ -235,7 +282,7 @@ pub const OIDCClient = struct {
         const body = try std.fmt.allocPrint(
             self.allocator,
             "grant_type=refresh_token&refresh_token={s}&client_id={s}&client_secret={s}&scope={s}",
-            .{ refresh_token, self.config.client_id, self.config.client_secret, self.config.scope },
+            .{ refresh_token_value, self.config.client_id, self.config.client_secret, self.config.scope },
         );
         defer self.allocator.free(body);
 
@@ -252,16 +299,27 @@ pub const OIDCClient = struct {
         try req.sendBodyComplete(body);
 
         var redirect_buffer: [1024]u8 = undefined;
-        const response = try req.receiveHead(&redirect_buffer);
+        var response = try req.receiveHead(&redirect_buffer);
 
         if (response.head.status != .ok) {
             return error.RefreshTokenFailed;
         }
 
+        // Read response body using streamRemaining
+        var response_writer: std.Io.Writer.Allocating = .init(self.allocator);
+        defer response_writer.deinit();
+
         var transfer_buffer: [4096]u8 = undefined;
-        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
-        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
-        defer self.allocator.free(response_body);
+        var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+        var decompress: std.http.Decompress = undefined;
+        const body_reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
+
+        _ = body_reader.streamRemaining(&response_writer.writer) catch |err| {
+            std.debug.print("Microsoft: Failed to read refresh token body: {}\n", .{err});
+            return error.RefreshTokenFailed;
+        };
+
+        const response_body = response_writer.written();
 
         const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
         defer parsed.deinit();

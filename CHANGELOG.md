@@ -5,6 +5,28 @@ All notable changes to Zepplin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.4] - 2026-03-29
+
+### Fixed
+
+- **OAuth Response Reading**: Fixed HTTP client response body reading for gzip-compressed chunked responses from GitHub and Microsoft OAuth endpoints
+  - Changed from `readAlloc()` (expects exact size) to `streamRemaining()` (reads until stream end)
+  - Added `readerDecompressing()` to handle gzip-compressed API responses
+  - Uses `Writer.Allocating` for dynamic-size response collection
+- **OAuth for GitHub**: Token exchange and user info endpoints now work correctly
+- **OAuth for Microsoft Entra**: Token exchange, user info, and refresh token endpoints now work correctly
+
+### Changed
+
+- Documented HTTP client patterns in `tasks/skills.md` for future reference
+
+## [0.6.3] - 2026-03-28
+
+### Fixed
+
+- **HTTP Server Request Handling**: Fixed deadlock in request reading by switching to `std.http.Server.receiveHead()` for proper HTTP header parsing
+- **Version Sync**: Synchronized version numbers across all source files to 0.6.3
+
 ## [0.6.2] - 2026-03-28
 
 ### Fixed

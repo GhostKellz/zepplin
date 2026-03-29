@@ -94,88 +94,142 @@ pub const GitHubOAuthClient = struct {
     pub fn exchangeCodeForToken(self: *GitHubOAuthClient, code: []const u8) !GitHubTokenResponse {
         var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
-        
+
+        // URL encode the redirect_uri (contains special chars like :// and /)
+        const encoded_redirect_uri = try urlEncode(self.allocator, self.config.redirect_uri);
+        defer self.allocator.free(encoded_redirect_uri);
+
         // Build request body for GitHub OAuth
         const body = try std.fmt.allocPrint(self.allocator,
             "client_id={s}&client_secret={s}&code={s}&redirect_uri={s}",
-            .{ self.config.client_id, self.config.client_secret, code, self.config.redirect_uri }
+            .{ self.config.client_id, self.config.client_secret, code, encoded_redirect_uri }
         );
         defer self.allocator.free(body);
-        
+
         const token_url = "https://github.com/login/oauth/access_token";
         const uri = try std.Uri.parse(token_url);
-        
+
         const headers = [_]std.http.Header{
             .{ .name = "Content-Type", .value = "application/x-www-form-urlencoded" },
-            .{ .name = "Accept", .value = "application/json" }, // Request JSON instead of URL-encoded
+            .{ .name = "Accept", .value = "application/json" },
             .{ .name = "User-Agent", .value = "Zepplin-Registry" },
         };
-        
+
         var req = try client.request(.POST, uri, .{ .extra_headers = &headers });
         defer req.deinit();
-        
+
         req.transfer_encoding = .{ .content_length = body.len };
         try req.sendBodyComplete(body);
-        
+
         var redirect_buffer: [1024]u8 = undefined;
-        const response = try req.receiveHead(&redirect_buffer);
-        
+        var response = req.receiveHead(&redirect_buffer) catch |err| {
+            std.debug.print("❌ GitHub: Failed to receive response head: {}\n", .{err});
+            return error.TokenExchangeFailed;
+        };
+
+        std.debug.print("📡 GitHub token response status: {}\n", .{response.head.status});
+
+        // Read response body using streamRemaining into an allocating writer
+        var response_writer: std.Io.Writer.Allocating = .init(self.allocator);
+        defer response_writer.deinit();
+
+        var transfer_buffer: [4096]u8 = undefined;
+        var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+        var decompress: std.http.Decompress = undefined;
+        const body_reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
+
+        _ = body_reader.streamRemaining(&response_writer.writer) catch |err| {
+            std.debug.print("❌ GitHub: Failed to read response body: {}\n", .{err});
+            if (response.bodyErr()) |body_err| {
+                std.debug.print("❌ GitHub body error details: {}\n", .{body_err});
+            }
+            return error.TokenExchangeFailed;
+        };
+
+        const response_body = response_writer.written();
+
         if (response.head.status != .ok) {
-            std.debug.print("GitHub token exchange failed with status: {}\\n", .{response.head.status});
+            std.debug.print("❌ GitHub token exchange failed with status: {}\n", .{response.head.status});
+            std.debug.print("❌ GitHub error response: {s}\n", .{response_body});
             return error.TokenExchangeFailed;
         }
-        
-        var transfer_buffer: [4096]u8 = undefined;
-        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
-        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
-        defer self.allocator.free(response_body);
-        
+
+        std.debug.print("✅ GitHub token response body: {s}\n", .{response_body});
+
         // Parse JSON response
-        const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
+        const parsed = std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{}) catch |err| {
+            std.debug.print("❌ GitHub: Failed to parse JSON: {}\n", .{err});
+            return error.TokenExchangeFailed;
+        };
         defer parsed.deinit();
-        
+
         const obj = parsed.value.object;
-        
+
+        // Check for error in response
+        if (obj.get("error")) |err_val| {
+            std.debug.print("❌ GitHub OAuth error: {s}\n", .{err_val.string});
+            if (obj.get("error_description")) |desc| {
+                std.debug.print("❌ GitHub OAuth error description: {s}\n", .{desc.string});
+            }
+            return error.TokenExchangeFailed;
+        }
+
+        const access_token = obj.get("access_token") orelse {
+            std.debug.print("❌ GitHub: No access_token in response\n", .{});
+            return error.TokenExchangeFailed;
+        };
+
         return GitHubTokenResponse{
-            .access_token = try self.allocator.dupe(u8, obj.get("access_token").?.string),
-            .token_type = try self.allocator.dupe(u8, obj.get("token_type").?.string),
-            .scope = try self.allocator.dupe(u8, obj.get("scope").?.string),
+            .access_token = try self.allocator.dupe(u8, access_token.string),
+            .token_type = try self.allocator.dupe(u8, if (obj.get("token_type")) |t| t.string else "bearer"),
+            .scope = try self.allocator.dupe(u8, if (obj.get("scope")) |s| s.string else ""),
         };
     }
     
     pub fn getUser(self: *GitHubOAuthClient, access_token: []const u8) !GitHubUser {
         var client = std.http.Client{ .allocator = self.allocator, .io = self.io };
         defer client.deinit();
-        
+
         const user_url = "https://api.github.com/user";
         const uri = try std.Uri.parse(user_url);
-        
+
         const auth_header = try std.fmt.allocPrint(self.allocator, "Bearer {s}", .{access_token});
         defer self.allocator.free(auth_header);
-        
+
         const headers = [_]std.http.Header{
             .{ .name = "Authorization", .value = auth_header },
             .{ .name = "Accept", .value = "application/vnd.github.v3+json" },
             .{ .name = "User-Agent", .value = "Zepplin-Registry" },
         };
-        
+
         var req = try client.request(.GET, uri, .{ .extra_headers = &headers });
         defer req.deinit();
-        
+
         try req.sendBodiless();
-        
+
         var redirect_buffer: [1024]u8 = undefined;
-        const response = try req.receiveHead(&redirect_buffer);
-        
+        var response = try req.receiveHead(&redirect_buffer);
+
         if (response.head.status != .ok) {
-            std.debug.print("GitHub user request failed with status: {}\\n", .{response.head.status});
+            std.debug.print("GitHub user request failed with status: {}\n", .{response.head.status});
             return error.UserInfoFailed;
         }
-        
+
+        // Read response body using streamRemaining
+        var response_writer: std.Io.Writer.Allocating = .init(self.allocator);
+        defer response_writer.deinit();
+
         var transfer_buffer: [4096]u8 = undefined;
-        const body_reader = req.reader.bodyReader(&transfer_buffer, response.head.transfer_encoding, response.head.content_length);
-        const response_body = try body_reader.*.readAlloc(self.allocator, 1024 * 1024);
-        defer self.allocator.free(response_body);
+        var decompress_buffer: [std.compress.flate.max_window_len]u8 = undefined;
+        var decompress: std.http.Decompress = undefined;
+        const body_reader = response.readerDecompressing(&transfer_buffer, &decompress, &decompress_buffer);
+
+        _ = body_reader.streamRemaining(&response_writer.writer) catch |err| {
+            std.debug.print("GitHub: Failed to read user response body: {}\n", .{err});
+            return error.UserInfoFailed;
+        };
+
+        const response_body = response_writer.written();
         
         // Parse JSON response from GitHub API
         const parsed = try std.json.parseFromSlice(std.json.Value, self.allocator, response_body, .{});
