@@ -2360,18 +2360,30 @@ pub const Server = struct {
 
     fn validateAuthToken(self: *Server, request: []const u8) !?AuthenticatedUser {
         // Extract Authorization header
-        const auth_header_start = std.mem.indexOf(u8, request, "Authorization: ") orelse return null;
-        const auth_line_end = std.mem.indexOf(u8, request[auth_header_start..], "\r\n") orelse return null;
+        const auth_header_start = std.mem.indexOf(u8, request, "Authorization: ") orelse {
+            std.debug.print("AUTH: No Authorization header found\n", .{});
+            return null;
+        };
+        const auth_line_end = std.mem.indexOf(u8, request[auth_header_start..], "\r\n") orelse {
+            std.debug.print("AUTH: No line end after Authorization header\n", .{});
+            return null;
+        };
         const auth_header = request[auth_header_start + 15..auth_header_start + auth_line_end];
+        std.debug.print("AUTH: Header found: {s}\n", .{auth_header[0..@min(auth_header.len, 50)]});
 
         // Extract Bearer token
-        const token = Auth.extractBearerToken(auth_header) orelse return null;
+        const token = Auth.extractBearerToken(auth_header) orelse {
+            std.debug.print("AUTH: No Bearer token in header\n", .{});
+            return null;
+        };
+        std.debug.print("AUTH: Token length={} dots=", .{token.len});
 
         // Check if this is a JWT (has two dots separating three parts)
         var dot_count: usize = 0;
         for (token) |c| {
             if (c == '.') dot_count += 1;
         }
+        std.debug.print("{}\n", .{dot_count});
 
         if (dot_count == 2) {
             // This is a JWT from OAuth - validate and parse it
