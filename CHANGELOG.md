@@ -5,6 +5,14 @@ All notable changes to Zepplin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-03-28
+
+### Fixed
+
+- **Dockerfile Zig Version**: Fixed hardcoded Zig version (0.16.0-dev.164) that was removed from upstream servers, causing Docker builds to fail
+- Dockerfile now dynamically fetches latest Zig master build from ziglang.org/download/index.json using `jq`
+- Added `jq` to Docker build dependencies for reliable JSON parsing
+
 ## [0.6.0] - 2026-03-28
 
 ### Added

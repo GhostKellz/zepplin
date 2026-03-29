@@ -8,12 +8,15 @@ RUN apk add --no-cache \
   sqlite-dev \
   build-base \
   git \
+  jq \
   && rm -rf /var/cache/apk/*
 
-# Install Zig master build (latest development version) 
-RUN curl -L "https://ziglang.org/builds/zig-x86_64-linux-0.16.0-dev.164+bc7955306.tar.xz" -o /tmp/zig.tar.xz \
+# Install Zig master build (dynamically fetches latest from index.json)
+RUN ZIG_URL=$(curl -sL https://ziglang.org/download/index.json | jq -r '.master."x86_64-linux".tarball') \
+  && echo "Downloading Zig from: $ZIG_URL" \
+  && curl -L "$ZIG_URL" -o /tmp/zig.tar.xz \
   && tar -xJf /tmp/zig.tar.xz -C /opt \
-  && ln -s /opt/zig-x86_64-linux-*/zig /usr/local/bin/zig \
+  && ln -s /opt/zig-linux-x86_64-*/zig /usr/local/bin/zig \
   && rm /tmp/zig.tar.xz \
   && zig version
 
