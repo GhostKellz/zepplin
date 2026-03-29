@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo/zepplin-logo.png" alt="Zepplin Logo" width="200">
+  <img src="assets/logo/dark-preview.png" alt="Zepplin Logo" width="400">
 </p>
 
 # ⚡ Zepplin
