@@ -1,12 +1,21 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// Write all data to a network stream using the Io interface
+/// Write all data to a network stream using direct syscall
 pub fn streamWriteAll(stream: std.Io.net.Stream, io: std.Io, data: []const u8) !void {
-    var write_buf: [8192]u8 = undefined;
-    var writer = stream.writer(io, &write_buf);
-    try writer.interface.writeAll(data);
-    try writer.interface.flush();
+    _ = io;
+    const fd = stream.socket.handle;
+    var written: usize = 0;
+    while (written < data.len) {
+        const result = std.posix.write(fd, data[written..]) catch |err| {
+            std.debug.print("❌ Write error: {}\n", .{err});
+            return error.WriteFailed;
+        };
+        if (result == 0) {
+            return error.WriteFailed;
+        }
+        written += result;
+    }
 }
 
 /// Get current unix timestamp in seconds (compatibility for Zig 0.16.0)

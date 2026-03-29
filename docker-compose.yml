@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        VERSION: "0.6.1"
+        VERSION: "0.6.2"
     container_name: zepplin-registry
     restart: unless-stopped
     network_mode: host
@@ -14,7 +14,7 @@ services:
       - ./backups:/app/backups
       - ./logs:/app/logs
     environment:
-      - ZEPPLIN_VERSION=0.6.1
+      - ZEPPLIN_VERSION=0.6.2
       - ZEPPLIN_PORT=8888
       - ZEPPLIN_BIND_ADDRESS=0.0.0.0
       - ZEPPLIN_SECRET_KEY=${ZEPPLIN_SECRET_KEY:-insecure-default-change-me}
@@ -42,7 +42,7 @@ services:
       start_period: 40s
     labels:
       - "com.cktech.service=zepplin-registry"
-      - "com.cktech.version=0.6.1"
+      - "com.cktech.version=0.6.2"
       - "com.cktech.description=Lightning-fast Zig Package Registry with OAuth"
 
 volumes:

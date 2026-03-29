@@ -5,6 +5,20 @@ All notable changes to Zepplin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-03-28
+
+### Fixed
+
+- **Network I/O**: Fixed response writing using direct POSIX syscalls instead of buffered Zig 0.16 I/O interface
+- **Docker Runtime**: Switched from Alpine (musl) to Debian (glibc) for better Zig 0.16 compatibility
+- **Host Networking**: Updated docker-compose to use host networking mode for direct nginx proxy access
+- **Spurious Warning**: Removed duplicate "Using default secret key" warning that always displayed regardless of config
+- **Version Sync**: Synchronized version numbers across all source files
+
+### Changed
+
+- Consolidated version constant to 0.6.2 in root.zig, server.zig, client.zig, and docker-compose.yml
+
 ## [0.6.1] - 2026-03-28
 
 ### Fixed
