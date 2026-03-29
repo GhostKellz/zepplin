@@ -3106,11 +3106,14 @@ pub const Server = struct {
             \\<h2>Login Successful!</h2>
             \\<p>Welcome, {s}! You can close this window.</p>
             \\<script>
-            \\localStorage.setItem('zepplin_token', '{s}');
+            \\var token = '{s}';
+            \\console.log('OAuth callback - Setting token, length:', token.length);
+            \\localStorage.setItem('zepplin_token', token);
             \\localStorage.setItem('zepplin_username', '{s}');
             \\localStorage.setItem('zepplin_display_name', '{s}');
             \\localStorage.setItem('zepplin_avatar_url', '{s}');
             \\localStorage.setItem('zepplin_email', '{s}');
+            \\console.log('Stored token check:', localStorage.getItem('zepplin_token')?.substring(0, 20));
             \\setTimeout(() => window.location.href = '/', 2000);
             \\</script>
             \\</body></html>
@@ -3263,11 +3266,14 @@ pub const Server = struct {
             \\<h2>Login Successful!</h2>
             \\<p>Welcome, {s}! You can close this window.</p>
             \\<script>
-            \\localStorage.setItem('zepplin_token', '{s}');
+            \\var token = '{s}';
+            \\console.log('OAuth callback - Setting token, length:', token.length);
+            \\localStorage.setItem('zepplin_token', token);
             \\localStorage.setItem('zepplin_username', '{s}');
             \\localStorage.setItem('zepplin_display_name', '{s}');
             \\localStorage.setItem('zepplin_avatar_url', '{s}');
             \\localStorage.setItem('zepplin_email', '{s}');
+            \\console.log('Stored token check:', localStorage.getItem('zepplin_token')?.substring(0, 20));
             \\setTimeout(() => window.location.href = '/', 2000);
             \\</script>
             \\</body></html>

@@ -377,15 +377,19 @@ class ZepplinApp {
     async setupAuth() {
         const token = localStorage.getItem('zepplin_token');
         const authNav = document.getElementById('auth-nav');
-        
+
+        console.log('setupAuth - token from localStorage:', token ? `${token.substring(0, 30)}... (len=${token.length})` : 'null');
+
         if (token) {
             // Check if token is valid
             try {
+                console.log('Calling /api/v1/auth/me with token');
                 const response = await fetch('/api/v1/auth/me', {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
                 });
+                console.log('Auth response status:', response.status);
                 
                 if (response.ok) {
                     const user = await response.json();
