@@ -1,0 +1,106 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { ZIG } from '../data/versions';
+
+const stack = [
+  { name: 'Zig', detail: `${ZIG.dev} (master)`, note: 'Core server, CLI, and package tooling' },
+  { name: 'zqlite / SQLite', detail: 'Embedded', note: 'Package metadata and registry storage' },
+  { name: 'Astro', detail: 'Static', note: 'Frontend pages, built ahead of time' },
+  { name: 'Tailwind CSS', detail: 'v4', note: 'Ocean & lightning design system' },
+  { name: 'Alpine.js', detail: 'v3', note: 'Lightweight client-side interactivity' },
+];
+---
+<BaseLayout title="About - Zepplin Registry" description="About Zepplin: a lightning-fast, self-hosted package registry for the Zig ecosystem.">
+  <div class="about-container">
+    <header class="about-header">
+      <h1 class="about-title">About Zepplin</h1>
+      <p class="about-subtitle">A lightning-fast package registry for the Zig ecosystem</p>
+    </header>
+
+    <section class="about-section">
+      <h2>Our Mission</h2>
+      <p>
+        Zepplin brings the convenience of <code>cargo</code> and the scalability of self-hosted
+        registries to Zig. It's a minimal, high-performance companion for managing Zig projects and
+        packages — built so developers can stay focused on performance and simplicity, just like Zig
+        itself.
+      </p>
+    </section>
+
+    <section class="about-section">
+      <h2>The Ocean &amp; Lightning Brand</h2>
+      <p>
+        The deep-ocean palette and electric lightning accents reflect what Zepplin is about: calm,
+        dependable infrastructure underneath, with the speed and energy of Zig striking through it.
+        Lightning is fast, precise, and unmistakable — exactly how package management should feel.
+      </p>
+    </section>
+
+    <section class="about-section">
+      <h2>Tech Stack</h2>
+      <div class="stack-list">
+        {stack.map((item) => (
+          <div class="stack-row">
+            <span class="stack-name">{item.name}</span>
+            <span class="stack-detail">{item.detail}</span>
+            <span class="stack-note">{item.note}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section class="hosted-section">
+      <div class="hosted-block">
+        <img src="/assets/CKTech-Logo_Brand.png" alt="CK Technology" class="hosted-block-logo" />
+        <div class="hosted-block-text">
+          <span class="hosted-block-label">Hosted &amp; maintained by</span>
+          <span class="hosted-block-name">CK Technology</span>
+          <p class="hosted-block-blurb">
+            Zepplin is built and operated by CK Technology, delivering reliable infrastructure for
+            the Zig community.
+          </p>
+        </div>
+      </div>
+    </section>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .about-container { max-width: 850px; margin: 0 auto; padding: 2rem; }
+  .about-header { margin-bottom: 2.5rem; }
+  .about-title { font-size: 2.5rem; font-weight: 700; color: var(--lightning-400); margin-bottom: 0.5rem; }
+  .about-subtitle { font-size: 1.2rem; color: var(--text-muted); }
+  .about-section { margin-bottom: 2.5rem; }
+  .about-section h2 {
+    font-size: 1.75rem; font-weight: 600; color: var(--text-primary);
+    margin-bottom: 1rem; padding-top: 1.5rem; border-top: 1px solid var(--border-subtle);
+  }
+  .about-section p { color: var(--text-secondary); line-height: 1.8; }
+  .about-section code { background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem; color: var(--lightning-400); font-family: 'Fira Code', monospace; }
+  .stack-list {
+    background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+    border-radius: var(--border-radius-md); overflow: hidden;
+  }
+  .stack-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 1rem;
+    padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-subtle); align-items: baseline;
+  }
+  .stack-row:last-child { border-bottom: none; }
+  .stack-name { color: var(--text-primary); font-weight: 600; }
+  .stack-detail { color: var(--lightning-400); font-family: 'Fira Code', monospace; font-size: 0.9rem; text-align: right; }
+  .stack-note { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.9rem; }
+  .hosted-section { margin-top: 3rem; }
+  .hosted-block {
+    display: flex; align-items: center; gap: 2rem;
+    background: var(--bg-elevated); border: 1px solid var(--border-default);
+    border-radius: var(--border-radius-md); padding: 2rem;
+  }
+  .hosted-block-logo { height: 80px; width: auto; flex-shrink: 0; }
+  .hosted-block-text { display: flex; flex-direction: column; gap: 0.25rem; }
+  .hosted-block-label { color: var(--text-muted); font-size: 0.9rem; }
+  .hosted-block-name { color: var(--ocean-200); font-size: 1.5rem; font-weight: 700; }
+  .hosted-block-blurb { color: var(--text-secondary); line-height: 1.6; margin: 0.5rem 0 0; }
+  @media (max-width: 480px) {
+    .hosted-block { flex-direction: column; text-align: center; gap: 1rem; padding: 1.5rem; }
+  }
+</style>

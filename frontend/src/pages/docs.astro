@@ -1,0 +1,172 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ZigCompat from '../components/ZigCompat.astro';
+import { ZIG } from '../data/versions';
+
+const docCards = [
+  {
+    icon: '🚀',
+    title: 'Getting Started',
+    description: 'Learn how to use Zepplin to manage your Zig dependencies and publish your own packages.',
+    href: '/docs/getting-started',
+    label: 'Read the guide',
+    external: false,
+  },
+  {
+    icon: '📦',
+    title: 'Publishing Packages',
+    description: 'Step-by-step guide to publishing your Zig packages to the Zepplin registry.',
+    href: '/publish',
+    label: 'Publish a package',
+    external: false,
+  },
+  {
+    icon: '⚡',
+    title: 'Zig Language',
+    description: 'Official Zig language documentation, guides, and learning resources.',
+    href: 'https://ziglang.org/documentation/master/',
+    label: 'Visit ziglang.org',
+    external: true,
+  },
+  {
+    icon: '🔧',
+    title: 'API Reference',
+    description: 'Complete API documentation for integrating with the Zepplin registry.',
+    href: '/docs/api',
+    label: 'API Documentation',
+    external: false,
+  },
+  {
+    icon: '⌨️',
+    title: 'CLI Reference',
+    description: 'Commands and flags for the Zepplin command-line tool: search, fetch, publish, and more.',
+    href: '/docs/cli',
+    label: 'CLI Documentation',
+    external: false,
+  },
+  {
+    icon: '🤝',
+    title: 'Contribute',
+    description: 'Help improve Zepplin — report issues, submit pull requests, and follow the contribution guidelines.',
+    href: '/docs/contribute',
+    label: 'Start contributing',
+    external: false,
+  },
+];
+
+const stdModules = [
+  'std.mem', 'std.fmt', 'std.io', 'std.fs', 'std.process', 'std.net',
+  'std.crypto', 'std.json', 'std.heap', 'std.hash', 'std.math', 'std.rand',
+  'std.time', 'std.unicode', 'std.http', 'std.compress', 'std.debug',
+  'std.testing', 'std.build', 'std.zig',
+];
+---
+<BaseLayout title="Documentation - Zepplin Registry" active="docs">
+  <div class="docs-container">
+    <div class="docs-header">
+      <h1 class="docs-title">📚 Documentation</h1>
+      <p class="docs-subtitle">Everything you need to work with Zepplin and Zig packages</p>
+    </div>
+
+    <div class="docs-grid">
+      {docCards.map((card) => (
+        <div class="doc-card">
+          <div class="doc-card-icon">{card.icon}</div>
+          <h2 class="doc-card-title">{card.title}</h2>
+          <p class="doc-card-description">{card.description}</p>
+          <a
+            href={card.href}
+            class="doc-card-link"
+            {...(card.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+          >
+            {card.label}
+            {card.external ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            )}
+          </a>
+        </div>
+      ))}
+    </div>
+
+    <ZigCompat note="Zepplin tracks Zig master (dev). Stable builds are supported as a reference; pin your project's minimum_zig_version accordingly." />
+
+    <div class="std-modules">
+      <h2 class="std-modules-title">Zig Standard Library Modules</h2>
+      <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+        Core modules available in the Zig standard library ({ZIG.dev})
+      </p>
+      <div class="std-modules-list">
+        {stdModules.map((name) => (
+          <div class="std-module">
+            <div class="std-module-name">{name}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div class="docs-tips">
+      <h3>💡 Quick Tips</h3>
+      <ul>
+        <li>Use <code>zig fetch --save &lt;url&gt;</code> to add dependencies directly to your <code>build.zig.zon</code></li>
+        <li>Pin to a tag: <code>zig fetch --save https://github.com/user/repo/archive/refs/tags/v1.0.0.tar.gz</code></li>
+        <li>Or latest main: <code>zig fetch --save https://github.com/user/repo/archive/main.tar.gz</code></li>
+        <li>Run <code>zig build</code> to compile your project with dependencies</li>
+        <li>Check out the <a href="https://github.com/ziglang/zig/wiki" target="_blank" rel="noopener noreferrer">Zig Wiki</a> for community resources</li>
+      </ul>
+    </div>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .docs-container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+  .docs-header { margin-bottom: 3rem; }
+  .docs-title { font-size: 2.5rem; font-weight: 700; color: var(--lightning-400); margin-bottom: 0.5rem; }
+  .docs-subtitle { font-size: 1.2rem; color: var(--text-muted); }
+  .docs-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem; margin-top: 3rem;
+  }
+  .doc-card {
+    background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+    border-radius: 0.5rem; padding: 1.5rem; transition: var(--transition-fast);
+  }
+  .doc-card:hover {
+    border-color: var(--lightning-400); transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 214, 10, 0.1);
+  }
+  .doc-card-icon { font-size: 2rem; margin-bottom: 1rem; }
+  .doc-card-title { font-size: 1.25rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem; }
+  .doc-card-description { color: var(--text-muted); margin-bottom: 1rem; line-height: 1.6; }
+  .doc-card-link {
+    color: var(--lightning-400); text-decoration: none; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 0.5rem;
+  }
+  .doc-card-link:hover { text-decoration: underline; }
+  .std-modules { margin-top: 3rem; }
+  .std-modules-title { font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; color: var(--text-primary); }
+  .std-modules-list {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem;
+  }
+  .std-module {
+    background: var(--bg-tertiary); border: 1px solid var(--border-subtle);
+    border-radius: 0.25rem; padding: 0.75rem; transition: var(--transition-fast);
+  }
+  .std-module:hover { background: rgba(255, 214, 10, 0.1); border-color: var(--lightning-400); }
+  .std-module-name { font-family: 'Fira Code', 'Courier New', monospace; color: var(--lightning-400); font-weight: 500; }
+  .docs-tips {
+    margin-top: 3rem; padding: 2rem; background: var(--bg-secondary);
+    border-radius: 0.5rem; border: 1px solid var(--border-subtle);
+  }
+  .docs-tips h3 { color: var(--lightning-400); margin-bottom: 1rem; }
+  .docs-tips ul { color: var(--text-muted); line-height: 1.8; }
+  .docs-tips code { background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem; }
+  .docs-tips a { color: var(--lightning-400); }
+</style>

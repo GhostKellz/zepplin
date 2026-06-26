@@ -1,0 +1,19 @@
+---
+// Inline copy-to-clipboard button for code blocks. Pass the raw snippet text
+// via `code`; the visible highlighted markup stays in the sibling <code>.
+interface Props {
+  code: string;
+  label?: string;
+}
+const { code, label = 'Copy code' } = Astro.props;
+---
+<button
+  type="button"
+  class="copy-btn"
+  x-data="{ copied: false }"
+  x-on:click={`$copy(${JSON.stringify(code)}).then(ok => { if (ok) { copied = true; setTimeout(() => copied = false, 1600); } })`}
+  aria-label={label}
+>
+  <span x-show="!copied">Copy</span>
+  <span x-show="copied" x-cloak>Copied!</span>
+</button>

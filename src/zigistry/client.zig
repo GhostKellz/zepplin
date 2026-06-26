@@ -1,6 +1,9 @@
 const std = @import("std");
 const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
+const build_options = @import("build_options");
+
+const USER_AGENT = "Zepplin-Registry/" ++ build_options.version;
 
 pub const ZigistryError = error{
     NetworkError,
@@ -204,7 +207,7 @@ pub const ZigistryClient = struct {
 
         const headers = [_]std.http.Header{
             .{ .name = "Accept", .value = "application/json" },
-            .{ .name = "User-Agent", .value = "Zepplin-Registry/0.6.5" },
+            .{ .name = "User-Agent", .value = USER_AGENT },
         };
 
         var req = try client.request(.GET, uri, .{ .extra_headers = &headers });

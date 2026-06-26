@@ -1,0 +1,119 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Search - Zepplin">
+  <div
+    class="search-page"
+    x-data="{
+      query: '',
+      packages: [],
+      loading: false,
+      searched: false,
+      error: '',
+      init() {
+        const params = new URLSearchParams(window.location.search);
+        const q = params.get('q');
+        if (q) { this.query = q; this.search(); }
+      },
+      submit() {
+        const q = this.query.trim();
+        if (q) {
+          history.pushState(null, '', `/search?q=${encodeURIComponent(q)}`);
+          this.search();
+        }
+      },
+      async search() {
+        const q = this.query.trim();
+        if (!q) return;
+        this.loading = true; this.error = ''; this.packages = []; this.searched = false;
+        try {
+          const res = await fetch(`/api/v1/search?q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          this.packages = data.packages || data || [];
+          this.searched = true;
+        } catch (e) {
+          this.error = 'Search failed. Please try again.';
+        } finally {
+          this.loading = false;
+        }
+      },
+      get count() {
+        return `Found ${this.packages.length} package${this.packages.length === 1 ? '' : 's'}`;
+      },
+    }"
+  >
+    <div class="search-header">
+      <h1>Search Packages</h1>
+      <div class="search-box-large">
+        <input
+          type="text"
+          placeholder="Search for packages..."
+          x-model="query"
+          @keydown.enter="submit()"
+        />
+        <button @click="submit()">Search</button>
+      </div>
+    </div>
+
+    <div class="search-results">
+      <div class="loading" x-show="loading">Searching...</div>
+      <div class="no-results" x-show="error" x-text="error"></div>
+      <div class="no-results" x-show="!loading && !error && searched && packages.length === 0">No packages found</div>
+      <div class="results-count" x-show="!loading && packages.length > 0" x-text="count"></div>
+      <div class="package-list">
+        <template x-for="pkg in packages" :key="pkg.name || pkg.full_name">
+          <div class="package-card">
+            <h3>
+              <a
+                :href="`/packages/${pkg.name || (pkg.owner + '/' + pkg.repo)}`"
+                x-text="pkg.name || pkg.full_name || (pkg.owner + '/' + pkg.repo)"
+              ></a>
+            </h3>
+            <p class="package-description" x-text="pkg.description || 'No description'"></p>
+            <div class="package-meta">
+              <span class="package-version" x-text="pkg.version || pkg.latest_version || 'v0.0.0'"></span>
+              <span><span x-text="pkg.downloads || 0"></span> downloads</span>
+              <template x-if="pkg.stars"><span><span x-text="pkg.stars"></span> stars</span></template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .search-page { max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }
+  .search-header { margin-bottom: 2rem; }
+  .search-header h1 { color: var(--text-primary, #fff); margin: 0 0 1rem 0; }
+  .search-box-large { display: flex; gap: 0.5rem; }
+  .search-box-large input {
+    flex: 1; padding: 1rem; border-radius: 8px;
+    border: 1px solid var(--border-color, #333); background: var(--card-bg, #1a1a2e);
+    color: var(--text-primary, #fff); font-size: 1rem;
+  }
+  .search-box-large input:focus { outline: none; border-color: var(--accent-color, #ffd60a); }
+  .search-box-large button {
+    padding: 1rem 2rem; background: var(--accent-color, #ffd60a); color: #000;
+    border: none; border-radius: 8px; font-weight: 600; cursor: pointer;
+  }
+  .search-box-large button:hover { opacity: 0.9; }
+  .search-results { margin-top: 2rem; }
+  .results-count { color: var(--text-secondary, #888); margin-bottom: 1rem; }
+  .search-page .package-list { display: flex; flex-direction: column; gap: 1rem; }
+  .search-page .package-card {
+    background: var(--card-bg, #1a1a2e); border-radius: 12px; padding: 1.5rem;
+    border: 1px solid var(--border-color, #333); transition: border-color 0.2s;
+  }
+  .search-page .package-card:hover { border-color: var(--accent-color, #ffd60a); }
+  .search-page .package-card h3 { margin: 0 0 0.5rem 0; }
+  .search-page .package-card h3 a { color: var(--accent-color, #ffd60a); text-decoration: none; }
+  .search-page .package-card h3 a:hover { text-decoration: underline; }
+  .search-page .package-description { color: var(--text-secondary, #888); margin: 0 0 1rem 0; }
+  .search-page .package-meta { display: flex; gap: 1.5rem; color: var(--text-secondary, #888); font-size: 0.875rem; }
+  .search-page .package-version {
+    background: rgba(255,214,10,0.1); color: var(--accent-color, #ffd60a);
+    padding: 0.25rem 0.5rem; border-radius: 4px; font-family: monospace;
+  }
+  .no-results, .search-page .loading { text-align: center; padding: 3rem; color: var(--text-secondary, #888); }
+</style>

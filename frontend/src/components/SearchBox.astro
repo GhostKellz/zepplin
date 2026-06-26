@@ -1,0 +1,82 @@
+---
+// Hero search box with live suggestions (Alpine). Mirrors the legacy
+// main.js behavior: debounced GET /api/v1/search?q=&limit=5 for suggestions,
+// Enter/button -> /search?q=, suggestion click -> /packages/<name>.
+---
+<div
+  class="search-container"
+  x-data="{
+    query: '',
+    results: [],
+    open: false,
+    active: -1,
+    async onInput() {
+      const q = this.query.trim();
+      this.active = -1;
+      if (q.length < 2) { this.open = false; this.results = []; return; }
+      try {
+        const res = await fetch(`/api/v1/search?q=${encodeURIComponent(q)}&limit=5`);
+        const data = res.ok ? await res.json() : {};
+        this.results = data.packages || data || [];
+        this.open = this.results.length > 0;
+      } catch { this.open = false; this.results = []; }
+    },
+    move(delta) {
+      if (!this.open || !this.results.length) return;
+      this.active = (this.active + delta + this.results.length) % this.results.length;
+    },
+    onEnter() {
+      if (this.open && this.active >= 0 && this.results[this.active]) {
+        this.select(this.results[this.active].name);
+      } else {
+        this.submit();
+      }
+    },
+    submit() {
+      const q = this.query.trim();
+      if (q) window.location.href = `/search?q=${encodeURIComponent(q)}`;
+    },
+    select(name) { window.location.href = `/packages/${name}`; },
+  }"
+  @click.outside="open = false"
+>
+  <div class="search-box">
+    <input
+      type="text"
+      placeholder="Search packages... (e.g. json, http, crypto)"
+      class="search-input"
+      role="combobox"
+      aria-expanded="false"
+      x-bind:aria-expanded="open"
+      aria-controls="search-suggestions"
+      aria-autocomplete="list"
+      x-model="query"
+      @input.debounce.300ms="onInput()"
+      @keydown.arrow-down.prevent="move(1)"
+      @keydown.arrow-up.prevent="move(-1)"
+      @keydown.enter.prevent="onEnter()"
+      @keydown.escape="open = false; active = -1"
+    />
+    <button class="search-btn" @click="submit()" aria-label="Search">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <path d="m21 21-4.35-4.35"></path>
+      </svg>
+    </button>
+  </div>
+  <div class="search-suggestions" id="search-suggestions" role="listbox" x-show="open" x-cloak>
+    <template x-for="(pkg, i) in results" :key="pkg.name">
+      <div
+        class="suggestion-item"
+        role="option"
+        x-bind:aria-selected="active === i"
+        x-bind:class="{ 'active': active === i }"
+        @click="select(pkg.name)"
+        @mouseenter="active = i"
+      >
+        <div class="suggestion-name" x-text="pkg.name"></div>
+        <div class="suggestion-desc" x-text="pkg.description || ''"></div>
+      </div>
+    </template>
+  </div>
+</div>

@@ -5,6 +5,23 @@ All notable changes to Zepplin will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] - 2026-06-24
+
+### Changed
+
+- **Zig 0.17 Migration**: Updated to build against Zig `0.17.0-dev.956+2dca73595`
+  - `build.zig`: replaced removed `b.args` handling with `run_cmd.addPassthruArgs()`
+  - Replaced the removed `**` array-repeat operator: `@splat(0)` for zeroed arrays,
+    explicit `++` concatenation for repeated string literals
+- **Dynamic Versioning**: The version is now a single source of truth read from
+  `build.zig.zon` and exposed through a `build_options` module. `root.zig`,
+  `server.zig`, and `zigistry/client.zig` no longer hard-code version strings.
+
+### Dependencies
+
+- Bumped zqlite to v1.7.0
+- Removed zsync dependency (unused by zepplin; zqlite 1.7.0 no longer requires it)
+
 ## [0.6.5] - 2026-03-29
 
 ### Fixed

@@ -49,6 +49,21 @@ pub const Database = struct {
             \\)
         );
 
+        // Map external OAuth/OIDC identities to a stable local user. Kept as a
+        // side table (rather than new columns on `users`) because the engine has
+        // no ALTER TABLE: CREATE TABLE IF NOT EXISTS is the only idempotent path
+        // and it leaves the existing `users` schema and data untouched.
+        try db.execute(
+            \\CREATE TABLE IF NOT EXISTS oauth_identities (
+            \\  provider TEXT,
+            \\  external_id TEXT,
+            \\  user_id INTEGER,
+            \\  username TEXT,
+            \\  email TEXT,
+            \\  created_at INTEGER
+            \\)
+        );
+
         return Database{
             .db = db,
             .allocator = allocator,
@@ -59,36 +74,68 @@ pub const Database = struct {
         self.db.close();
     }
 
+    /// Run a mutating statement and flush it to disk before returning.
+    ///
+    /// zqlite autocommit statements only touch the in-memory btree/pager cache;
+    /// durability happens in `flush()`/`commit()`/`close()`. The server runs an
+    /// infinite accept loop and is always terminated by a signal, so `close()`
+    /// never executes — without an explicit flush here every write would be lost
+    /// on restart. Flushing per write gives a registry the synchronous-durable
+    /// behavior callers expect.
+    fn executeWrite(self: *Database, sql: []const u8) !void {
+        try self.db.execute(sql);
+        try self.db.flush();
+    }
+
     // Package operations
     pub fn addPackage(self: *Database, package: types.PackageMetadata) !void {
         const version_str = try package.version.toString(self.allocator);
         defer self.allocator.free(version_str);
 
-        var buf: [1024]u8 = undefined;
-        const sql = try std.fmt.bufPrint(buf[0..],
-            \\INSERT INTO packages 
-            \\(name, version, description, author, license, repository, dependencies, 
+        // Every string field originates from the upload request, so each must be
+        // escaped before interpolation to avoid SQL injection. version_str is
+        // numeric-dotted by construction but escaped for uniformity. Heap-allocated
+        // because arbitrary descriptions/repositories overflow a fixed buffer.
+        const esc_name = try escapeSql(self.allocator, package.name);
+        defer self.allocator.free(esc_name);
+        const esc_version = try escapeSql(self.allocator, version_str);
+        defer self.allocator.free(esc_version);
+        const esc_description = try escapeSql(self.allocator, package.description orelse "");
+        defer self.allocator.free(esc_description);
+        const esc_author = try escapeSql(self.allocator, package.author orelse "");
+        defer self.allocator.free(esc_author);
+        const esc_license = try escapeSql(self.allocator, package.license orelse "");
+        defer self.allocator.free(esc_license);
+        const esc_repository = try escapeSql(self.allocator, package.repository orelse "");
+        defer self.allocator.free(esc_repository);
+
+        const sql = try std.fmt.allocPrint(self.allocator,
+            \\INSERT INTO packages
+            \\(name, version, description, author, license, repository, dependencies,
             \\ file_path, file_size, checksum, created_at, updated_at)
-            \\VALUES ('{s}', '{s}', '{s}', '{s}', '{s}', '{s}', '{s}', 
+            \\VALUES ('{s}', '{s}', '{s}', '{s}', '{s}', '{s}', '{s}',
             \\        '', 0, '', {d}, {d})
         , .{
-            package.name,
-            version_str,
-            package.description orelse "",
-            package.author orelse "",
-            package.license orelse "",
-            package.repository orelse "",
+            esc_name,
+            esc_version,
+            esc_description,
+            esc_author,
+            esc_license,
+            esc_repository,
             "", // dependencies as JSON string - TODO: serialize properly
             compat.timestamp(),
             compat.timestamp(),
         });
+        defer self.allocator.free(sql);
 
-        try self.db.execute(sql);
+        try self.executeWrite(sql);
     }
 
     pub fn getPackage(self: *Database, name: []const u8) !?types.PackageMetadata {
-        var buf: [512]u8 = undefined;
-        const sql = try std.fmt.bufPrint(buf[0..], "SELECT name, version, description, author, license, repository FROM packages WHERE name = '{s}'", .{name});
+        const esc_name = try escapeSql(self.allocator, name);
+        defer self.allocator.free(esc_name);
+        const sql = try std.fmt.allocPrint(self.allocator, "SELECT name, version, description, author, license, repository FROM packages WHERE name = '{s}'", .{esc_name});
+        defer self.allocator.free(sql);
 
         var result = self.db.query(sql) catch |err| {
             std.log.warn("Database query failed for package '{s}': {}", .{ name, err });
@@ -225,8 +272,10 @@ pub const Database = struct {
     }
 
     pub fn searchPackages(self: *Database, query: []const u8, limit: ?usize) ![]types.PackageMetadata {
-        var buf: [512]u8 = undefined;
-        const sql = try std.fmt.bufPrint(buf[0..], "SELECT name, version, description, author, license, repository FROM packages WHERE name LIKE '%{s}%' OR description LIKE '%{s}%' LIMIT {}", .{ query, query, limit orelse 20 });
+        const esc_query = try escapeSql(self.allocator, query);
+        defer self.allocator.free(esc_query);
+        const sql = try std.fmt.allocPrint(self.allocator, "SELECT name, version, description, author, license, repository FROM packages WHERE name LIKE '%{s}%' OR description LIKE '%{s}%' LIMIT {}", .{ esc_query, esc_query, limit orelse 20 });
+        defer self.allocator.free(sql);
 
         var result = self.db.query(sql) catch |err| {
             std.log.warn("Database search query failed: {}", .{err});
@@ -297,82 +346,138 @@ pub const Database = struct {
     }
 
     pub fn removePackage(self: *Database, name: []const u8) !void {
-        var buf: [256]u8 = undefined;
-        const sql = try std.fmt.bufPrint(buf[0..], "DELETE FROM packages WHERE name = '{s}'", .{name});
-        try self.db.execute(sql);
+        const esc_name = try escapeSql(self.allocator, name);
+        defer self.allocator.free(esc_name);
+        const sql = try std.fmt.allocPrint(self.allocator, "DELETE FROM packages WHERE name = '{s}'", .{esc_name});
+        defer self.allocator.free(sql);
+        try self.executeWrite(sql);
     }
 
     // User operations
     pub fn createUser(self: *Database, username: []const u8, email: []const u8, password_hash: []const u8, api_token: []const u8) !void {
-        var buf: [512]u8 = undefined;
-        const sql = try std.fmt.bufPrint(buf[0..], "INSERT INTO users (username, email, password_hash, api_token, created_at) VALUES ('{s}', '{s}', '{s}', '{s}', {d})", .{ username, email, password_hash, api_token, compat.timestamp() });
-        try self.db.execute(sql);
+        // username/email come straight from the registration request body, so
+        // they must be escaped before interpolation or a quote breaks the
+        // statement / allows SQL injection. password_hash (hex) and api_token
+        // (base64url JWT) are quote-free by construction.
+        const esc_username = try escapeSql(self.allocator, username);
+        defer self.allocator.free(esc_username);
+        const esc_email = try escapeSql(self.allocator, email);
+        defer self.allocator.free(esc_email);
+
+        // Heap-allocated: the api_token is a full JWT (~250+ chars) which, with
+        // the hex password hash, overflows any reasonable fixed stack buffer.
+        const sql = try std.fmt.allocPrint(self.allocator, "INSERT INTO users (username, email, password_hash, api_token, created_at) VALUES ('{s}', '{s}', '{s}', '{s}', {d})", .{ esc_username, esc_email, password_hash, api_token, compat.timestamp() });
+        defer self.allocator.free(sql);
+        try self.executeWrite(sql);
     }
 
-    pub fn getUserByToken(self: *Database, token: []const u8) !?[]const u8 {
-        var buf: [256]u8 = undefined;
-        const sql = try std.fmt.bufPrint(buf[0..], "SELECT username FROM users WHERE api_token = '{s}'", .{token});
+    /// Credentials needed to authenticate a local login and mint a session.
+    /// `id` is derived deterministically from the username so register and
+    /// login agree without needing an auto-increment column (the engine has
+    /// no usable rowid/AUTOINCREMENT). Caller owns the strings.
+    pub const UserAuth = struct {
+        id: i64,
+        email: []const u8,
+        password_hash: []const u8,
 
-        var result = self.db.query(sql) catch {
-            // Fall back to mock for demo
-            if (std.mem.eql(u8, token, "test-token")) {
-                return "testuser";
-            }
-            return null;
-        };
+        pub fn deinit(self: UserAuth, allocator: std.mem.Allocator) void {
+            allocator.free(self.email);
+            allocator.free(self.password_hash);
+        }
+    };
+
+    pub fn getUserAuth(self: *Database, username: []const u8) !?UserAuth {
+        const escaped = try escapeSql(self.allocator, username);
+        defer self.allocator.free(escaped);
+
+        const sql = try std.fmt.allocPrint(self.allocator, "SELECT email, password_hash FROM users WHERE username = '{s}'", .{escaped});
+        defer self.allocator.free(sql);
+
+        var result = try self.db.query(sql);
         defer result.deinit();
 
         if (result.next()) |row_const| {
             var row = row_const;
             defer row.deinit();
-            if (row.getText(0)) |uname| {
-                return try self.allocator.dupe(u8, uname);
-            }
-        }
-
-        // Fall back to mock for demo
-        if (std.mem.eql(u8, token, "test-token")) {
-            return "testuser";
+            const email = try self.allocator.dupe(u8, row.getText(0) orelse "");
+            errdefer self.allocator.free(email);
+            const hash = try self.allocator.dupe(u8, row.getText(1) orelse "");
+            return UserAuth{
+                .id = deriveUserId("local", username),
+                .email = email,
+                .password_hash = hash,
+            };
         }
         return null;
     }
 
-    pub fn getUserByUsername(self: *Database, username: []const u8) !?[]const u8 {
-        var buf: [256]u8 = undefined;
-        const sql = try std.fmt.bufPrint(buf[0..], "SELECT password_hash FROM users WHERE username = '{s}'", .{username});
+    /// Stable local user id for a freshly registered (or existing) local user.
+    pub fn localUserId(username: []const u8) i64 {
+        return deriveUserId("local", username);
+    }
 
-        var result = self.db.query(sql) catch {
-            // Fall back to mock for demo
-            if (std.mem.eql(u8, username, "testuser")) {
-                return "mock-hash";
-            }
-            return null;
-        };
-        defer result.deinit();
+    /// Resolve an external identity to a stable local user id, persisting it on
+    /// first sight. Returns the same id on subsequent logins for the same
+    /// (provider, external_id) pair.
+    pub fn findOrCreateOAuthUser(
+        self: *Database,
+        provider: []const u8,
+        external_id: []const u8,
+        username: []const u8,
+        email: []const u8,
+    ) !i64 {
+        const esc_provider = try escapeSql(self.allocator, provider);
+        defer self.allocator.free(esc_provider);
+        const esc_external = try escapeSql(self.allocator, external_id);
+        defer self.allocator.free(esc_external);
 
-        if (result.next()) |row_const| {
-            var row = row_const;
-            defer row.deinit();
-            if (row.getText(0)) |hash| {
-                return try self.allocator.dupe(u8, hash);
+        const select_sql = try std.fmt.allocPrint(
+            self.allocator,
+            "SELECT user_id FROM oauth_identities WHERE provider = '{s}' AND external_id = '{s}'",
+            .{ esc_provider, esc_external },
+        );
+        defer self.allocator.free(select_sql);
+
+        {
+            var result = try self.db.query(select_sql);
+            defer result.deinit();
+            if (result.next()) |row_const| {
+                var row = row_const;
+                defer row.deinit();
+                if (row.getInt(0)) |id| return id;
             }
         }
 
-        // Fall back to mock for demo
-        if (std.mem.eql(u8, username, "testuser")) {
-            return "mock-hash";
-        }
-        return null;
+        const id = deriveUserId(provider, external_id);
+
+        const esc_username = try escapeSql(self.allocator, username);
+        defer self.allocator.free(esc_username);
+        const esc_email = try escapeSql(self.allocator, email);
+        defer self.allocator.free(esc_email);
+
+        const insert_sql = try std.fmt.allocPrint(
+            self.allocator,
+            "INSERT INTO oauth_identities (provider, external_id, user_id, username, email, created_at) VALUES ('{s}', '{s}', {d}, '{s}', '{s}', {d})",
+            .{ esc_provider, esc_external, id, esc_username, esc_email, compat.timestamp() },
+        );
+        defer self.allocator.free(insert_sql);
+
+        try self.executeWrite(insert_sql);
+        return id;
     }
 
     // Stats operations
     pub fn incrementDownloadCount(self: *Database, package_name: []const u8) !void {
-        var buf: [512]u8 = undefined;
-        const sql = try std.fmt.bufPrint(buf[0..],
+        // package_name is "{owner}/{repo}" taken from the request URL, so it must
+        // be escaped before interpolation to avoid SQL injection.
+        const esc_name = try escapeSql(self.allocator, package_name);
+        defer self.allocator.free(esc_name);
+        const sql = try std.fmt.allocPrint(self.allocator,
             \\INSERT OR REPLACE INTO download_stats (package_name, download_count, last_downloaded)
             \\VALUES ('{s}', 1, {d})
-        , .{ package_name, compat.timestamp() });
-        try self.db.execute(sql);
+        , .{ esc_name, compat.timestamp() });
+        defer self.allocator.free(sql);
+        try self.executeWrite(sql);
     }
 
     pub fn getDownloadCount(self: *Database, package_name: []const u8) !u64 {
@@ -574,16 +679,20 @@ pub const Database = struct {
     }
 
     pub fn userExists(self: *Database, username: []const u8) !bool {
-        // Mock implementation - in production would query users table
-        _ = self;
-        
-        // Mock some existing users
-        if (std.mem.eql(u8, username, "testuser") or
-            std.mem.eql(u8, username, "admin") or
-            std.mem.eql(u8, username, "cktech")) {
+        const escaped = try escapeSql(self.allocator, username);
+        defer self.allocator.free(escaped);
+
+        const sql = try std.fmt.allocPrint(self.allocator, "SELECT username FROM users WHERE username = '{s}'", .{escaped});
+        defer self.allocator.free(sql);
+
+        var result = try self.db.query(sql);
+        defer result.deinit();
+
+        if (result.next()) |row_const| {
+            var row = row_const;
+            row.deinit();
             return true;
         }
-        
         return false;
     }
 
@@ -676,3 +785,42 @@ pub const Database = struct {
         return true;
     }
 };
+
+/// Deterministic, stable positive i64 user id from a namespace + key. Used in
+/// place of an auto-increment column (the storage engine assigns no rowid for
+/// regular INTEGER PRIMARY KEY columns), so the same identity always maps to
+/// the same id across logins.
+fn deriveUserId(namespace: []const u8, key: []const u8) i64 {
+    var h = std.hash.Wyhash.init(0);
+    h.update(namespace);
+    h.update(":");
+    h.update(key);
+    return @intCast(h.final() & 0x7FFF_FFFF_FFFF_FFFF);
+}
+
+/// Escape single quotes for inline SQL string literals. Values flowing in from
+/// registration and OAuth providers are externally controlled, so doubling
+/// quotes prevents them from breaking out of the literal.
+fn escapeSql(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    for (input) |c| {
+        if (c == '\'') try out.append(allocator, '\'');
+        try out.append(allocator, c);
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+test "deriveUserId is stable, positive, and namespace-sensitive" {
+    const a = deriveUserId("local", "alice");
+    try std.testing.expectEqual(a, deriveUserId("local", "alice"));
+    try std.testing.expect(a >= 0);
+    try std.testing.expect(deriveUserId("github", "alice") != a);
+}
+
+test "escapeSql doubles single quotes" {
+    const allocator = std.testing.allocator;
+    const out = try escapeSql(allocator, "O'Brien");
+    defer allocator.free(out);
+    try std.testing.expectEqualStrings("O''Brien", out);
+}

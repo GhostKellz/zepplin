@@ -5,6 +5,12 @@ zig-pkg/
 *.o
 *.exe
 
+# Frontend (Astro/Bun) build artifacts
+frontend/node_modules/
+frontend/.astro/
+frontend/dist/
+dist/
+
 # Package management files
 zepplin.lock
 
@@ -37,5 +43,6 @@ CLAUDE.md
 # Archived documentation
 archive/
 lessons/
+tasks/
 tasks/lessons.md
 tasks/skills.md

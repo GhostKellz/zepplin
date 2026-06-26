@@ -1,0 +1,143 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Settings - Zepplin">
+  <div
+    class="settings-page"
+    x-data="{
+      loaded: false,
+      loggedIn: false,
+      user: { provider: 'local', email: '' },
+      tokenPreview: '',
+      providerIcons: {
+        github: 'https://github.githubassets.com/favicons/favicon-dark.svg',
+        microsoft: 'https://www.microsoft.com/favicon.ico',
+        google: 'https://www.google.com/favicon.ico',
+        local: '/assets/logo/Zepplin-logo.png',
+      },
+      async init() {
+        const token = localStorage.getItem('zepplin_token');
+        if (token) {
+          try {
+            const res = await fetch('/api/v1/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+            if (res.ok) {
+              this.user = await res.json();
+              this.tokenPreview = token.substring(0, 50) + '...';
+              this.loggedIn = true;
+            }
+          } catch (e) {}
+        }
+        this.loaded = true;
+      },
+      get providerIcon() { return this.providerIcons[this.user.provider] || this.providerIcons.local; },
+      get providerName() {
+        const p = this.user.provider || 'local';
+        return p.charAt(0).toUpperCase() + p.slice(1);
+      },
+      generateToken() { alert('API token generation coming soon'); },
+      deleteAccount() {
+        if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+          alert('Account deletion coming soon');
+        }
+      },
+    }"
+  >
+    <h1 style="color: var(--text-primary, #fff); margin-bottom: 1.5rem;">Settings</h1>
+
+    <div class="settings-card" x-show="loaded && !loggedIn" x-cloak>
+      <div class="not-logged-in">
+        <h2>Not Logged In</h2>
+        <p>Please sign in to access settings.</p>
+        <a href="/auth" class="login-btn">Sign In</a>
+      </div>
+    </div>
+
+    <div x-show="loaded && loggedIn" x-cloak>
+      <div class="settings-card">
+        <h2>Linked Accounts</h2>
+        <div class="linked-accounts">
+          <div class="linked-account">
+            <img :src="providerIcon" :alt="user.provider" class="linked-account-icon" />
+            <div class="linked-account-info">
+              <div class="linked-account-name" x-text="providerName"></div>
+              <div class="linked-account-email" x-text="user.email || 'No email'"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h2>API Access</h2>
+        <div class="setting-row">
+          <div class="setting-info">
+            <h3>API Token</h3>
+            <p>Use this token for CLI and API access</p>
+            <div class="api-token-display" x-text="tokenPreview || 'Not generated'"></div>
+          </div>
+          <div class="setting-action">
+            <button @click="generateToken()">Generate New Token</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h2>Danger Zone</h2>
+        <div class="setting-row">
+          <div class="setting-info">
+            <h3>Delete Account</h3>
+            <p>Permanently delete your account and all packages</p>
+          </div>
+          <div class="setting-action">
+            <button class="danger" @click="deleteAccount()">Delete Account</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .settings-page { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+  .settings-card {
+    background: var(--card-bg, #1a1a2e); border-radius: 12px; padding: 2rem;
+    border: 1px solid var(--border-color, #333); margin-bottom: 1.5rem;
+  }
+  .settings-card h2 {
+    margin: 0 0 1.5rem 0; color: var(--text-primary, #fff); font-size: 1.25rem;
+    padding-bottom: 1rem; border-bottom: 1px solid var(--border-color, #333);
+  }
+  .setting-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 0; border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-info h3 { margin: 0 0 0.25rem 0; color: var(--text-primary, #fff); font-size: 1rem; }
+  .setting-info p { margin: 0; color: var(--text-secondary, #888); font-size: 0.875rem; }
+  .setting-action button {
+    padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--border-color, #333);
+    background: transparent; color: var(--text-primary, #fff); cursor: pointer; transition: all 0.2s;
+  }
+  .setting-action button:hover { background: rgba(255,255,255,0.1); }
+  .setting-action button.danger { border-color: #ff4444; color: #ff4444; }
+  .setting-action button.danger:hover { background: rgba(255,68,68,0.1); }
+  .api-token-display {
+    background: #000; padding: 0.75rem 1rem; border-radius: 6px; font-family: monospace;
+    color: var(--accent-color, #ffd60a); word-break: break-all; margin-top: 0.5rem;
+  }
+  .linked-accounts { display: flex; flex-direction: column; gap: 0.75rem; }
+  .linked-account {
+    display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1rem;
+    background: rgba(255,255,255,0.05); border-radius: 8px;
+  }
+  .linked-account-icon { width: 32px; height: 32px; }
+  .linked-account-info { flex: 1; }
+  .linked-account-name { color: var(--text-primary, #fff); font-weight: 500; }
+  .linked-account-email { color: var(--text-secondary, #888); font-size: 0.875rem; }
+  .settings-page .not-logged-in { text-align: center; padding: 3rem; }
+  .settings-page .not-logged-in h2 { color: var(--text-primary, #fff); }
+  .settings-page .not-logged-in p { color: var(--text-secondary, #888); margin-bottom: 1.5rem; }
+  .settings-page .login-btn {
+    display: inline-block; padding: 0.75rem 2rem; background: var(--accent-color, #ffd60a);
+    color: #000; text-decoration: none; border-radius: 8px; font-weight: 600;
+  }
+</style>

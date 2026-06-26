@@ -1,0 +1,101 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Profile - Zepplin">
+  <div class="profile-page">
+    <div
+      class="profile-card"
+      x-data="{
+        loaded: false,
+        loggedIn: false,
+        user: { display_name: '', username: '', email: '', provider: 'local' },
+        avatarUrl: '',
+        async init() {
+          const token = localStorage.getItem('zepplin_token');
+          this.avatarUrl = localStorage.getItem('zepplin_avatar_url') || '';
+          if (token) {
+            try {
+              const res = await fetch('/api/v1/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+              if (res.ok) { this.user = await res.json(); this.loggedIn = true; }
+            } catch (e) {}
+          }
+          this.loaded = true;
+        },
+        get initial() {
+          return (this.user.display_name || this.user.username || 'U').charAt(0).toUpperCase();
+        },
+      }"
+    >
+      <div class="not-logged-in" x-show="loaded && !loggedIn" x-cloak>
+        <h2>Not Logged In</h2>
+        <p>Please sign in to view your profile.</p>
+        <a href="/auth" class="login-btn">Sign In</a>
+      </div>
+      <div x-show="loaded && loggedIn" x-cloak>
+        <div class="profile-header">
+          <div class="profile-avatar-large">
+            <template x-if="avatarUrl">
+              <img :src="avatarUrl" :alt="user.display_name" />
+            </template>
+            <template x-if="!avatarUrl">
+              <span x-text="initial"></span>
+            </template>
+          </div>
+          <div class="profile-info">
+            <h1 x-text="user.display_name || user.username"></h1>
+            <p x-text="user.email || ''"></p>
+            <span class="profile-provider" x-text="user.provider || 'local'"></span>
+          </div>
+        </div>
+        <div class="profile-section">
+          <h2>Statistics</h2>
+          <div class="profile-stats">
+            <div class="profile-stat">
+              <div class="profile-stat-value">0</div>
+              <div class="profile-stat-label">Packages</div>
+            </div>
+            <div class="profile-stat">
+              <div class="profile-stat-value">0</div>
+              <div class="profile-stat-label">Total Downloads</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .profile-page { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+  .profile-card {
+    background: var(--card-bg, #1a1a2e); border-radius: 12px; padding: 2rem;
+    border: 1px solid var(--border-color, #333);
+  }
+  .profile-header { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 2rem; }
+  .profile-avatar-large {
+    width: 100px; height: 100px; border-radius: 50%; background: var(--accent-color, #ffd60a);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.5rem; font-weight: bold; color: #000;
+  }
+  .profile-avatar-large img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+  .profile-info h1 { margin: 0 0 0.5rem 0; color: var(--text-primary, #fff); }
+  .profile-info p { margin: 0; color: var(--text-secondary, #888); }
+  .profile-provider {
+    display: inline-block; padding: 0.25rem 0.75rem; background: var(--accent-color, #ffd60a);
+    color: #000; border-radius: 4px; font-size: 0.875rem; margin-top: 0.5rem;
+  }
+  .profile-section { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border-color, #333); }
+  .profile-section h2 { margin: 0 0 1rem 0; color: var(--text-primary, #fff); font-size: 1.25rem; }
+  .profile-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
+  .profile-stat { text-align: center; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px; }
+  .profile-stat-value { font-size: 1.5rem; font-weight: bold; color: var(--accent-color, #ffd60a); }
+  .profile-stat-label { color: var(--text-secondary, #888); font-size: 0.875rem; }
+  .not-logged-in { text-align: center; padding: 3rem; }
+  .not-logged-in h2 { color: var(--text-primary, #fff); }
+  .not-logged-in p { color: var(--text-secondary, #888); margin-bottom: 1.5rem; }
+  .login-btn {
+    display: inline-block; padding: 0.75rem 2rem; background: var(--accent-color, #ffd60a);
+    color: #000; text-decoration: none; border-radius: 8px; font-weight: 600;
+  }
+  .login-btn:hover { opacity: 0.9; }
+</style>

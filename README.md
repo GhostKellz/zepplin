@@ -24,15 +24,15 @@ Zepplin is your minimal, high-performance companion for managing Zig projects an
 # Clone and build
 git clone <your-repo-url>
 cd zepplin
-./dev.sh build
+./scripts/dev.sh build
 
 # Start the registry server
-./dev.sh serve
+./scripts/dev.sh serve
 
 # In another terminal, use the CLI
-./dev.sh run init                    # Initialize a new project
-./dev.sh run add xev                 # Add a package
-./dev.sh run publish                 # Publish to registry
+./scripts/dev.sh run init                    # Initialize a new project
+./scripts/dev.sh run add xev                 # Add a package
+./scripts/dev.sh run publish                 # Publish to registry
 ```
 
 ---
@@ -89,21 +89,21 @@ GET  /api/search?q={query}       # Search packages
 ### Quick Docker Run
 ```bash
 # Build and run with Docker
-./dev.sh docker-build
-./dev.sh docker-run 8080
+./scripts/dev.sh docker-build
+./scripts/dev.sh docker-run 8080
 
 # Or manually
-docker build -t zepplin .
+docker build -t zepplin -f release/Dockerfile .
 docker run -p 8080:8080 -v zepplin-data:/data zepplin
 ```
 
 ### Production with Docker Compose
 ```bash
 # Start the full stack (registry + nginx)
-docker-compose --profile production up -d
+docker-compose -f release/docker-compose.yml --profile production up -d
 
 # Development mode (registry only)
-docker-compose up -d
+docker-compose -f release/docker-compose.yml up -d
 ```
 
 The Docker setup includes:
@@ -133,32 +133,40 @@ src/
 ### Configuration Files
 - `zepplin.toml` - Project configuration and dependencies
 - `zepplin.lock` - Locked dependency versions (like Cargo.lock)
-- `docker-compose.yml` - Container orchestration
-- `nginx.conf` - Reverse proxy configuration
+- `release/docker-compose.yml` - Container orchestration
+- `release/Dockerfile` - Container build
+- `release/nginx/production.conf` - Reverse proxy configuration
+- `release/.env.example` - Environment variable template
+
+### Repository Layout
+- `release/` - Dockerfile(s), docker-compose, nginx configs, env template
+- `scripts/` - Dev, install, and provisioning scripts (`dev.sh`, `install.sh`, `setup-lxc.sh`)
+- `tests/` - Standalone test programs and fixtures
+- `docs/` - Documentation ([docs/README.md](docs/README.md))
 
 ---
 
 ## 📋 Development
 
 ### Prerequisites
-- Zig 0.16.0 or later
+- Zig 0.17.0-dev (master) — stable 0.16.x supported as a reference target
 - Docker (optional, for containerized deployment)
 
 ### Development Workflow
 ```bash
 # Build and test
-./dev.sh build
-./dev.sh test
+./scripts/dev.sh build
+./scripts/dev.sh test
 
 # Run CLI commands
-./dev.sh run help
-./dev.sh run init
+./scripts/dev.sh run help
+./scripts/dev.sh run init
 
 # Start development server
-./dev.sh serve 3000
+./scripts/dev.sh serve 3000
 
 # Clean build artifacts
-./dev.sh clean
+./scripts/dev.sh clean
 ```
 
 ### Development Script Commands
@@ -223,7 +231,7 @@ src/
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Run tests: `./dev.sh test`
+4. Run tests: `./scripts/dev.sh test`
 5. Submit a pull request
 
 ---
@@ -236,12 +244,16 @@ MIT
 
 ## 📚 Documentation
 
-- **[Deployment Guide](docs/deployment/DEPLOYMENT_GUIDE.md)** - Complete production deployment with nginx
-- **[Deployment Quickstart](docs/deployment/DEPLOYMENT_QUICKSTART.md)** - Quick deployment steps
-- **[SQLite Integration](docs/api/SQLITE_INTEGRATION.md)** - Database implementation details
-- **[Zigistry Integration](docs/api/ZIGISTRY_INTEGRATION.md)** - Package discovery features
-- **[GitHub OAuth Setup](docs/sso/GITHUB_OAUTH_SETUP.md)** - GitHub SSO configuration
-- **[OIDC Setup](docs/sso/OIDC_SETUP_DOC.md)** - OpenID Connect configuration
+Full documentation lives in [`docs/`](docs/README.md). Highlights:
+
+- **[Deployment Guide](docs/deployment/guide.md)** - Complete production deployment with nginx
+- **[Deployment Quickstart](docs/deployment/quickstart.md)** - Quick deployment steps
+- **[Environment Configuration](docs/deployment/environment.md)** - Runtime environment variables
+- **[CLI Commands](docs/cli/commands.md)** - Command-line reference
+- **[OIDC / OAuth Setup](docs/authentication/oidc.md)** - Microsoft/Entra and GitHub authentication
+- **[GitHub OAuth Setup](docs/authentication/github-oauth.md)** - GitHub SSO configuration
+- **[SQLite Backend](docs/integrations/sqlite.md)** - Database implementation details
+- **[Zigistry Integration](docs/integrations/zigistry.md)** - Package discovery features
 
 ---
 

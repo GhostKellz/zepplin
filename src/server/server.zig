@@ -1,13 +1,19 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const compat = @import("../common/compat.zig");
 const types = @import("../common/types.zig");
 const Database = @import("../database/database.zig").Database;
-const Auth = @import("../auth/auth.zig").Auth;
+const Auth = @import("../auth/local.zig").Auth;
+const session = @import("../auth/session.zig");
+const oidc = @import("../auth/oidc.zig");
+const entra = @import("../auth/entra.zig");
+const google = @import("../auth/google.zig");
+const github = @import("../auth/github.zig");
 const Storage = @import("../storage/storage.zig").Storage;
 const ZigistryClient = @import("../zigistry/client.zig").ZigistryClient;
 const ZiglibsImporter = @import("../tools/ziglibs_import.zig").ZiglibsImporter;
 
-const ZEPPLIN_VERSION = "0.6.5";
+const ZEPPLIN_VERSION = @import("build_options").version;
 
 const RouteHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) anyerror!void;
 const StaticHandler = *const fn (self: *Server, stream: std.Io.net.Stream, path: []const u8) anyerror!void;
@@ -184,6 +190,7 @@ pub const Server = struct {
     address: std.Io.net.IpAddress,
     database: Database,
     auth: Auth,
+    session: session.SessionManager,
     storage: Storage,
     zigistry: ZigistryClient,
 
@@ -245,6 +252,10 @@ pub const Server = struct {
         };
         const auth = Auth.init(allocator, io, secret_key);
 
+        // Session/JWT manager: single source of truth for issuing and validating
+        // session tokens (reads JWT_SECRET, independent of the app secret_key).
+        const session_manager = try session.SessionManager.init(allocator, environ_map);
+
         // Initialize storage with configurable path
         const storage_dir = blk: {
             if (getEnv(environ_map, "ZEPPLIN_STORAGE_PATH")) |path| {
@@ -267,6 +278,7 @@ pub const Server = struct {
             .address = address,
             .database = database,
             .auth = auth,
+            .session = session_manager,
             .storage = storage,
             .zigistry = zigistry,
             .exact_routes = std.HashMap([]const u8, RouteHandler, std.hash_map.StringContext, std.hash_map.default_max_load_percentage).init(allocator),
@@ -292,6 +304,7 @@ pub const Server = struct {
         self.response_cache.deinit();
         self.file_cache.deinit();
         self.database.deinit();
+        self.session.deinit();
         self.storage.deinit();
     }
 
@@ -321,10 +334,10 @@ pub const Server = struct {
         try self.exact_routes.put("/", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
-                try server.serveStaticFile(stream, "web/templates/index.html");
+                try server.serveStaticFile(stream, "dist/index.html");
             }
         }.handler);
-        
+
         try self.exact_routes.put("/health", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
@@ -335,35 +348,70 @@ pub const Server = struct {
         try self.exact_routes.put("/docs", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
-                try server.serveStaticFile(stream, "web/docs.html");
+                try server.serveStaticFile(stream, "dist/docs.html");
             }
         }.handler);
 
         try self.exact_routes.put("/docs/getting-started", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
-                try server.serveStaticFile(stream, "web/getting-started.html");
+                try server.serveStaticFile(stream, "dist/getting-started.html");
             }
         }.handler);
 
         try self.exact_routes.put("/docs/api", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
-                try server.serveStaticFile(stream, "web/api-docs.html");
+                try server.serveStaticFile(stream, "dist/api-docs.html");
             }
         }.handler);
 
         try self.exact_routes.put("/docs/cli", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
-                try server.serveStaticFile(stream, "web/cli-docs.html");
+                try server.serveStaticFile(stream, "dist/cli-docs.html");
             }
         }.handler);
 
         try self.exact_routes.put("/docs/contribute", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
                 _ = path; _ = request; _ = request_allocator;
-                try server.serveStaticFile(stream, "web/contribute.html");
+                try server.serveStaticFile(stream, "dist/contribute.html");
+            }
+        }.handler);
+
+        try self.exact_routes.put("/status", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.serveStaticFile(stream, "dist/status.html");
+            }
+        }.handler);
+
+        try self.exact_routes.put("/support", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.serveStaticFile(stream, "dist/support.html");
+            }
+        }.handler);
+
+        try self.exact_routes.put("/about", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request; _ = request_allocator;
+                try server.serveStaticFile(stream, "dist/about.html");
+            }
+        }.handler);
+
+        try self.exact_routes.put("/robots.txt", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request_allocator;
+                try server.handleRobots(stream, request);
+            }
+        }.handler);
+
+        try self.exact_routes.put("/sitemap.xml", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+                _ = path; _ = request_allocator;
+                try server.handleSitemap(stream, request);
             }
         }.handler);
 
@@ -430,31 +478,39 @@ pub const Server = struct {
             }
         }.handler });
         
-        // Static file routes
+        // Static file routes — Astro emits hashed bundles under /_astro/
+        try self.static_routes.put("/_astro/", struct {
+            fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
+                const file_path = try std.fmt.allocPrint(server.allocator, "dist{s}", .{path});
+                defer server.allocator.free(file_path);
+                try server.serveStaticFile(stream, file_path);
+            }
+        }.handler);
+
         try self.static_routes.put("/css/", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
-                const file_path = try std.fmt.allocPrint(server.allocator, "web{s}", .{path});
+                const file_path = try std.fmt.allocPrint(server.allocator, "dist{s}", .{path});
                 defer server.allocator.free(file_path);
                 try server.serveStaticFile(stream, file_path);
             }
         }.handler);
-        
+
         try self.static_routes.put("/js/", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
-                const file_path = try std.fmt.allocPrint(server.allocator, "web{s}", .{path});
+                const file_path = try std.fmt.allocPrint(server.allocator, "dist{s}", .{path});
                 defer server.allocator.free(file_path);
                 try server.serveStaticFile(stream, file_path);
             }
         }.handler);
-        
+
         try self.static_routes.put("/images/", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
-                const file_path = try std.fmt.allocPrint(server.allocator, "web{s}", .{path});
+                const file_path = try std.fmt.allocPrint(server.allocator, "dist{s}", .{path});
                 defer server.allocator.free(file_path);
                 try server.serveStaticFile(stream, file_path);
             }
         }.handler);
-        
+
         try self.static_routes.put("/assets/", struct {
             fn handler(server: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
                 const file_path = try std.fmt.allocPrint(server.allocator, "assets{s}", .{path[7..]});
@@ -499,7 +555,7 @@ pub const Server = struct {
         var connection_writer = stream.writer(self.io, &send_buffer);
         var http_server: std.http.Server = .init(&connection_reader.interface, &connection_writer.interface);
 
-        const http_request = http_server.receiveHead() catch |err| {
+        var http_request = http_server.receiveHead() catch |err| {
             switch (err) {
                 error.HttpConnectionClosing => return,
                 else => {
@@ -511,16 +567,34 @@ pub const Server = struct {
 
         const method_str = @tagName(http_request.head.method);
         const path = http_request.head.target;
+        const head_buffer = http_request.head_buffer;
 
-        try self.routeRequestHttp(stream, &connection_writer, method_str, path, http_request.head_buffer, request_allocator);
+        // Read the request body here, while the buffered connection reader still
+        // holds it. Handlers must not re-read the socket: on a keep-alive
+        // connection the client has already sent the body (now buffered) and is
+        // waiting for our response, so a second socket read would block forever.
+        var body: []const u8 = "";
+        if (http_request.head.expect == null) {
+            if (http_request.head.content_length) |clen| {
+                if (clen > 0 and clen <= 1 << 20) {
+                    const dest = try request_allocator.alloc(u8, @intCast(clen));
+                    var xfer_buf: [4096]u8 = undefined;
+                    const body_reader = http_request.readerExpectNone(&xfer_buf);
+                    try body_reader.readSliceAll(dest);
+                    body = dest;
+                }
+            }
+        }
+
+        try self.routeRequestHttp(stream, &connection_writer, method_str, path, head_buffer, body, request_allocator);
     }
 
     // New routing function that uses the persistent writer
-    fn routeRequestHttp(self: *Server, stream: std.Io.net.Stream, writer: *std.Io.net.Stream.Writer, method: []const u8, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+    fn routeRequestHttp(self: *Server, stream: std.Io.net.Stream, writer: *std.Io.net.Stream.Writer, method: []const u8, path: []const u8, request: []const u8, body: []const u8, request_allocator: std.mem.Allocator) !void {
         std.debug.print("📡 {s} {s}\n", .{ method, path });
 
         // For now, delegate to the original routing logic but use proper writer
-        try self.routeRequest(stream, method, path, request, request_allocator);
+        try self.routeRequest(stream, method, path, request, body, request_allocator);
 
         // Flush the writer to ensure all data is sent
         writer.interface.flush() catch |err| switch (err) {
@@ -532,7 +606,7 @@ pub const Server = struct {
         };
     }
 
-    fn routeRequest(self: *Server, stream: std.Io.net.Stream, method: []const u8, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
+    fn routeRequest(self: *Server, stream: std.Io.net.Stream, method: []const u8, path: []const u8, request: []const u8, body: []const u8, request_allocator: std.mem.Allocator) !void {
         std.debug.print("📡 {s} {s}\n", .{ method, path });
 
         if (std.mem.eql(u8, method, "GET")) {
@@ -592,43 +666,49 @@ pub const Server = struct {
                 try self.handleGitHubLogin(stream);
             } else if (std.mem.startsWith(u8, path, "/api/v1/auth/oauth/github/callback")) {
                 try self.handleGitHubCallback(stream, path, request);
+            } else if (std.mem.eql(u8, path, "/api/v1/auth/oauth/google/login")) {
+                try self.handleGoogleLogin(stream);
+            } else if (std.mem.startsWith(u8, path, "/api/v1/auth/oauth/google/callback")) {
+                try self.handleGoogleCallback(stream, path, request);
+            } else if (std.mem.eql(u8, path, "/api/v1/auth/providers")) {
+                try self.handleAuthProviders(stream);
             } else if (std.mem.endsWith(u8, path, ".wasm")) {
-                const file_path = try std.fmt.allocPrint(self.allocator, "web{s}", .{path});
+                const file_path = try std.fmt.allocPrint(self.allocator, "dist{s}", .{path});
                 defer self.allocator.free(file_path);
                 try self.serveStaticFile(stream, file_path);
             } else if (std.mem.eql(u8, path, "/auth")) {
-                try self.serveStaticFile(stream, "web/auth.html");
+                try self.serveStaticFile(stream, "dist/auth.html");
             } else if (std.mem.eql(u8, path, "/publish")) {
-                try self.serveStaticFile(stream, "web/publish.html");
+                try self.serveStaticFile(stream, "dist/publish.html");
             } else if (std.mem.eql(u8, path, "/profile")) {
-                try self.serveStaticFile(stream, "web/profile.html");
+                try self.serveStaticFile(stream, "dist/profile.html");
             } else if (std.mem.eql(u8, path, "/settings")) {
-                try self.serveStaticFile(stream, "web/settings.html");
+                try self.serveStaticFile(stream, "dist/settings.html");
             } else if (std.mem.eql(u8, path, "/packages/my")) {
-                try self.serveStaticFile(stream, "web/my-packages.html");
+                try self.serveStaticFile(stream, "dist/my-packages.html");
             } else if (std.mem.eql(u8, path, "/packages") or std.mem.eql(u8, path, "/browse")) {
-                try self.serveStaticFile(stream, "web/browse.html");
+                try self.serveStaticFile(stream, "dist/browse.html");
             } else if (std.mem.startsWith(u8, path, "/packages?")) {
-                try self.serveStaticFile(stream, "web/browse.html");
+                try self.serveStaticFile(stream, "dist/browse.html");
             } else if (std.mem.eql(u8, path, "/trending") or std.mem.startsWith(u8, path, "/trending?")) {
-                try self.serveStaticFile(stream, "web/trending.html");
+                try self.serveStaticFile(stream, "dist/trending.html");
             } else if (std.mem.eql(u8, path, "/search") or std.mem.startsWith(u8, path, "/search?")) {
-                try self.serveStaticFile(stream, "web/search.html");
+                try self.serveStaticFile(stream, "dist/search.html");
             } else if (std.mem.startsWith(u8, path, "/packages/")) {
                 // Individual package pages - serve browse for now
-                try self.serveStaticFile(stream, "web/browse.html");
+                try self.serveStaticFile(stream, "dist/browse.html");
             } else if (std.mem.startsWith(u8, path, "/docs") or
                       std.mem.startsWith(u8, path, "/login") or
                       std.mem.startsWith(u8, path, "/account")) {
-                try self.serveStaticFile(stream, "web/templates/index.html");
+                try self.serveStaticFile(stream, "dist/index.html");
             } else {
                 try self.serve404(stream);
             }
         } else if (std.mem.eql(u8, method, "POST")) {
             if (std.mem.eql(u8, path, "/api/v1/auth/register")) {
-                try self.handleRegister(stream);
+                try self.handleRegister(stream, body);
             } else if (std.mem.eql(u8, path, "/api/v1/auth/login")) {
-                try self.handleLogin(stream);
+                try self.handleLogin(stream, body);
             } else if (std.mem.eql(u8, path, "/api/v1/auth/logout")) {
                 try self.handleLogout(stream, request);
             } else if (std.mem.startsWith(u8, path, "/api/v1/packages/")) {
@@ -793,274 +873,12 @@ pub const Server = struct {
             "image/jpeg"
         else if (std.mem.endsWith(u8, file_path, ".ico"))
             "image/x-icon"
+        else if (std.mem.endsWith(u8, file_path, ".xml"))
+            "application/xml"
+        else if (std.mem.endsWith(u8, file_path, ".txt"))
+            "text/plain"
         else
             "application/octet-stream";
-    }
-
-    fn serveWebUI(self: *Server, stream: std.Io.net.Stream) !void {
-        // Get real statistics from database
-        const stats = try self.database.getDownloadStats();
-
-        const html_content = try std.fmt.allocPrint(self.allocator,
-            \\<!DOCTYPE html>
-            \\<html lang="en">
-            \\<head>
-            \\    <meta charset="UTF-8">
-            \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            \\    <title>Zepplin Registry</title>
-            \\    <style>
-            \\        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            \\        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1419; color: #e6e1dc; }}
-            \\        .container {{ max-width: 1200px; margin: 0 auto; padding: 2rem; }}
-            \\        .header {{ text-align: center; margin-bottom: 3rem; }}
-            \\        .header h1 {{ font-size: 3rem; color: #f7931e; margin-bottom: 1rem; }}
-            \\        .header p {{ font-size: 1.2rem; color: #b8b4a3; }}
-            \\        .search-box {{ background: #1e2328; border: 2px solid #39414a; border-radius: 8px; padding: 1rem; margin-bottom: 2rem; }}
-            \\        .search-box input {{ width: 100%; background: none; border: none; color: #e6e1dc; font-size: 1.1rem; outline: none; }}
-            \\        .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }}
-            \\        .stat-card {{ background: #1e2328; padding: 1.5rem; border-radius: 8px; text-align: center; }}
-            \\        .stat-card h3 {{ color: #f7931e; font-size: 2rem; margin-bottom: 0.5rem; }}
-            \\        .packages {{ background: #1e2328; border-radius: 8px; padding: 1.5rem; }}
-            \\        .package-item {{ border-bottom: 1px solid #39414a; padding: 1rem 0; }}
-            \\        .package-item:last-child {{ border-bottom: none; }}
-            \\        .package-name {{ color: #f7931e; font-size: 1.1rem; font-weight: bold; }}
-            \\        .package-version {{ color: #36c692; margin-left: 0.5rem; }}
-            \\        .package-desc {{ color: #b8b4a3; margin-top: 0.5rem; }}
-            \\        .footer {{ text-align: center; margin-top: 3rem; color: #b8b4a3; }}
-            \\        .search-results {{ display: none; background: #1e2328; border-radius: 8px; padding: 1rem; margin-top: 1rem; }}
-            \\        .tabs {{ display: flex; gap: 1rem; margin: 2rem 0 1rem 0; }}
-            \\        .tab {{ padding: 0.8rem 1.5rem; background: #1e2328; color: #b8b4a3; border: none; border-radius: 8px; cursor: pointer; transition: all 0.3s; }}
-            \\        .tab.active {{ background: #f7931e; color: #1a1d23; font-weight: bold; }}
-            \\        .tab:hover {{ background: #36c692; color: #1a1d23; }}
-            \\        .tab-content {{ display: none; }}
-            \\        .tab-content.active {{ display: block; }}
-            \\        .zigistry-search {{ margin-bottom: 1rem; }}
-            \\        .zigistry-search input {{ width: 100%; padding: 1rem; background: #1e2328; border: 1px solid #36c692; border-radius: 8px; color: #e8e6e3; font-size: 1rem; }}
-            \\        .zigistry-results {{ margin-top: 1rem; }}
-            \\        .discover-section {{ margin: 1rem 0; }}
-            \\        .trending-btn, .browse-btn {{ padding: 0.6rem 1.2rem; background: #36c692; color: #1a1d23; border: none; border-radius: 6px; cursor: pointer; margin-right: 0.5rem; margin-bottom: 0.5rem; font-weight: bold; }}
-            \\        .trending-btn:hover, .browse-btn:hover {{ background: #f7931e; }}
-            \\    </style>
-            \\</head>
-            \\<body>
-            \\    <div class="container">
-            \\        <div class="header">
-            \\            <h1>⚡ Zepplin Registry</h1>
-            \\            <p>Blazing-fast package registry for the Zig ecosystem</p>
-            \\        </div>
-            \\        
-            \\        <div class="stats">
-            \\            <div class="stat-card">
-            \\                <h3>{}</h3>
-            \\                <p>Total Packages</p>
-            \\            </div>
-            \\            <div class="stat-card">
-            \\                <h3>{}</h3>
-            \\                <p>Downloads Today</p>
-            \\            </div>
-            \\            <div class="stat-card">
-            \\                <h3>{}</h3>
-            \\                <p>Total Downloads</p>
-            \\            </div>
-            \\        </div>
-            \\        
-            \\        <div class="tabs">
-            \\            <button class="tab active" onclick="switchTab('local')">🏠 Local Packages</button>
-            \\            <button class="tab" onclick="switchTab('discover')">🔍 Discover Packages</button>
-            \\        </div>
-            \\        
-            \\        <div id="local-tab" class="tab-content active">
-            \\        <div class="search-box">
-            \\            <input type="text" placeholder="🔍 Search packages..." id="searchInput">
-            \\        </div>
-            \\        
-            \\        <div class="search-results" id="searchResults"></div>
-            \\        
-            \\        <div class="packages" id="packagesList">
-            \\            <h2 style="margin-bottom: 1rem; color: #f7931e;">📦 Recent Packages</h2>
-            \\            <div style="text-align: center; color: #b8b4a3; padding: 2rem;">
-            \\                Loading packages...
-            \\            </div>
-            \\        </div>
-            \\        </div>
-            \\        
-            \\        <div id="discover-tab" class="tab-content">
-            \\            <div class="discover-section">
-            \\                <h2 style="color: #f7931e; margin-bottom: 1rem;">🌟 Quick Actions</h2>
-            \\                <button class="trending-btn" onclick="loadTrending()">🔥 Show Trending</button>
-            \\                <button class="browse-btn" onclick="loadCategory('web')">🌐 Web Frameworks</button>
-            \\                <button class="browse-btn" onclick="loadCategory('cli')">⚡ CLI Tools</button>
-            \\                <button class="browse-btn" onclick="loadCategory('gamedev')">🎮 Game Dev</button>
-            \\            </div>
-            \\            
-            \\            <div class="zigistry-search">
-            \\                <input type="text" placeholder="🔍 Discover packages from Zigistry..." id="zigistrySearchInput">
-            \\            </div>
-            \\            
-            \\            <div class="zigistry-results" id="zigistryResults">
-            \\                <h2 style="color: #f7931e; margin-bottom: 1rem;">🚀 Discover Zig Packages</h2>
-            \\                <p style="color: #b8b4a3;">Search for packages or use the quick actions above to explore the Zig ecosystem!</p>
-            \\            </div>
-            \\        </div>
-            \\        
-            \\        <div class="footer">
-            \\            <p>Made with Zig ⚡ | Powered by SQLite 🗄️ | Built for hackers 🛠️</p>
-            \\        </div>
-            \\    </div>
-            \\    
-            \\    <script>
-            \\        // Load packages on page load
-            \\        fetch('/api/packages')
-            \\            .then(response => response.json())
-            \\            .then(data => {{
-            \\                const packagesList = document.getElementById('packagesList');
-            \\                if (data.packages && data.packages.length > 0) {{
-            \\                    let html = '<h2 style="margin-bottom: 1rem; color: #f7931e;">📦 Recent Packages</h2>';
-            \\                    data.packages.forEach(pkg => {{
-            \\                        html += `
-            \\                            <div class="package-item">
-            \\                                <div>
-            \\                                    <span class="package-name">${{pkg.name}}</span>
-            \\                                    <span class="package-version">v${{pkg.version}}</span>
-            \\                                </div>
-            \\                                <div class="package-desc">${{pkg.description || 'No description'}}</div>
-            \\                            </div>
-            \\                        `;
-            \\                    }});
-            \\                    packagesList.innerHTML = html;
-            \\                }} else {{
-            \\                    packagesList.innerHTML = '<h2 style="margin-bottom: 1rem; color: #f7931e;">📦 Packages</h2><div style="text-align: center; color: #b8b4a3; padding: 2rem;">No packages yet. Publish your first package!</div>';
-            \\                }}
-            \\            }})
-            \\            .catch(err => console.error('Failed to load packages:', err));
-            \\        
-            \\        // Search functionality
-            \\        const searchInput = document.getElementById('searchInput');
-            \\        const searchResults = document.getElementById('searchResults');
-            \\        
-            \\        searchInput.addEventListener('input', function(e) {{
-            \\            const query = e.target.value.trim();
-            \\            if (query.length > 0) {{
-            \\                fetch(`/api/search?q=${{encodeURIComponent(query)}}`)
-            \\                    .then(response => response.json())
-            \\                    .then(data => {{
-            \\                        if (data.results && data.results.length > 0) {{
-            \\                            let html = `<h3 style="color: #f7931e; margin-bottom: 1rem;">Search Results (${{data.total}})</h3>`;
-            \\                            data.results.forEach(pkg => {{
-            \\                                html += `
-            \\                                    <div class="package-item">
-            \\                                        <div>
-            \\                                            <span class="package-name">${{pkg.name}}</span>
-            \\                                            <span class="package-version">v${{pkg.version}}</span>
-            \\                                        </div>
-            \\                                        <div class="package-desc">${{pkg.description || 'No description'}}</div>
-            \\                                    </div>
-            \\                                `;
-            \\                            }});
-            \\                            searchResults.innerHTML = html;
-            \\                            searchResults.style.display = 'block';
-            \\                        }} else {{
-            \\                            searchResults.innerHTML = '<div style="text-align: center; color: #b8b4a3; padding: 1rem;">No packages found</div>';
-            \\                            searchResults.style.display = 'block';
-            \\                        }}
-            \\                    }})
-            \\                    .catch(err => console.error('Search failed:', err));
-            \\            }}
-            \\        }});
-            \\        
-            \\        // Tab switching functionality
-            \\        function switchTab(tabName) {{
-            \\            // Hide all tab contents
-            \\            document.querySelectorAll('.tab-content').forEach(tab => {{
-            \\                tab.classList.remove('active');
-            \\            }});
-            \\            
-            \\            // Remove active class from all tabs
-            \\            document.querySelectorAll('.tab').forEach(tab => {{
-            \\                tab.classList.remove('active');
-            \\            }});
-            \\            
-            \\            // Show selected tab content
-            \\            document.getElementById(tabName + '-tab').classList.add('active');
-            \\            
-            \\            // Add active class to clicked tab
-            \\            event.target.classList.add('active');
-            \\        }}
-            \\        
-            \\        // Zigistry search functionality
-            \\        const zigistrySearchInput = document.getElementById('zigistrySearchInput');
-            \\        const zigistryResults = document.getElementById('zigistryResults');
-            \\        
-            \\        zigistrySearchInput.addEventListener('input', function(e) {{
-            \\            const query = e.target.value.trim();
-            \\            if (query.length > 2) {{
-            \\                fetch(`/api/zigistry/discover?q=${{encodeURIComponent(query)}}`)
-            \\                    .then(response => response.json())
-            \\                    .then(data => {{
-            \\                        displayZigistryResults(data.packages, `Search Results for "${{query}}"`);
-            \\                    }})
-            \\                    .catch(err => console.error('Zigistry search failed:', err));
-            \\            }} else if (query.length === 0) {{
-            \\                zigistryResults.innerHTML = `
-            \\                    <h2 style="color: #f7931e; margin-bottom: 1rem;">🚀 Discover Zig Packages</h2>
-            \\                    <p style="color: #b8b4a3;">Search for packages or use the quick actions above to explore the Zig ecosystem!</p>
-            \\                `;
-            \\            }}
-            \\        }});
-            \\        
-            \\        function loadTrending() {{
-            \\            fetch('/api/zigistry/trending')
-            \\                .then(response => response.json())
-            \\                .then(data => {{
-            \\                    displayZigistryResults(data.packages, '🔥 Trending Packages');
-            \\                }})
-            \\                .catch(err => console.error('Failed to load trending:', err));
-            \\        }}
-            \\        
-            \\        function loadCategory(category) {{
-            \\            fetch(`/api/zigistry/browse?category=${{category}}`)
-            \\                .then(response => response.json())
-            \\                .then(data => {{
-            \\                    displayZigistryResults(data.packages, `📦 ${{category.charAt(0).toUpperCase() + category.slice(1)}} Packages`);
-            \\                }})
-            \\                .catch(err => console.error('Failed to load category:', err));
-            \\        }}
-            \\        
-            \\        function displayZigistryResults(packages, title) {{
-            \\            if (packages && packages.length > 0) {{
-            \\                let html = `<h2 style="color: #f7931e; margin-bottom: 1rem;">${{title}}</h2>`;
-            \\                packages.forEach(pkg => {{
-            \\                    const topicsHtml = pkg.topics.map(topic => `<span style="background: #36c692; color: #1a1d23; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin-right: 0.3rem;">${{topic}}</span>`).join('');
-            \\                    html += `
-            \\                        <div class="package-item">
-            \\                            <div>
-            \\                                <span class="package-name">${{pkg.name}}</span>
-            \\                                <span style="color: #36c692; margin-left: 0.5rem;">⭐ ${{pkg.github_stars}} stars</span>
-            \\                                <span style="color: #b8b4a3; margin-left: 0.5rem;">📊 ${{pkg.zigistry_score.toFixed(2)}}</span>
-            \\                            </div>
-            \\                            <div class="package-desc">${{pkg.description || 'No description'}}</div>
-            \\                            <div style="margin-top: 0.5rem;">
-            \\                                ${{topicsHtml}}
-            \\                                <a href="${{pkg.github_url}}" target="_blank" style="color: #f7931e; margin-left: 0.5rem; text-decoration: none;">🔗 GitHub</a>
-            \\                            </div>
-            \\                        </div>
-            \\                    `;
-            \\                }});
-            \\                zigistryResults.innerHTML = html;
-            \\            }} else {{
-            \\                zigistryResults.innerHTML = `<h2 style="color: #f7931e; margin-bottom: 1rem;">${{title}}</h2><div style="text-align: center; color: #b8b4a3; padding: 1rem;">No packages found</div>`;
-            \\            }}
-            \\        }}
-            \\    </script>
-            \\</body>
-            \\</html>
-        , .{ stats.total_packages, stats.downloads_today, stats.total_downloads });
-        defer self.allocator.free(html_content);
-
-        const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{s}", .{ html_content.len, html_content });
-        defer self.allocator.free(response);
-
-        try compat.streamWriteAll(stream, self.io,response);
     }
 
     fn handlePackageApi(self: *Server, stream: std.Io.net.Stream, path: []const u8) !void {
@@ -2250,6 +2068,102 @@ pub const Server = struct {
         try self.serveJson(stream, status_code, json_response);
     }
 
+    /// Resolve the public base URL (scheme + host, no trailing slash) used for
+    /// absolute-URL artifacts (sitemap.xml, robots.txt). Precedence:
+    /// REDIRECT_BASE_URL > ZEPPLIN_DOMAIN > request `Host` header (assumed
+    /// https, since nginx forwards the public host) > the cktech default.
+    /// Keeping this runtime-derived means a self-hoster only sets one env var
+    /// and never needs to rebuild the frontend. Caller owns the returned slice.
+    fn resolveBaseUrl(self: *Server, request: []const u8) ![]u8 {
+        if (self.environ_map.get("REDIRECT_BASE_URL")) |v| {
+            if (v.len > 0) return self.allocator.dupe(u8, std.mem.trimEnd(u8, v, "/"));
+        }
+        if (self.environ_map.get("ZEPPLIN_DOMAIN")) |v| {
+            if (v.len > 0) {
+                const trimmed = std.mem.trimEnd(u8, v, "/");
+                if (std.mem.startsWith(u8, trimmed, "http://") or std.mem.startsWith(u8, trimmed, "https://")) {
+                    return self.allocator.dupe(u8, trimmed);
+                }
+                return std.fmt.allocPrint(self.allocator, "https://{s}", .{trimmed});
+            }
+        }
+        if (parseHostHeader(request)) |host| {
+            return std.fmt.allocPrint(self.allocator, "https://{s}", .{host});
+        }
+        return self.allocator.dupe(u8, "https://zig.cktech.org");
+    }
+
+    /// Extract the value of the `Host:` request header (case-insensitive),
+    /// or null if absent. Returns a slice into `request`.
+    fn parseHostHeader(request: []const u8) ?[]const u8 {
+        var line_start: usize = 0;
+        while (std.mem.indexOfScalarPos(u8, request, line_start, '\n')) |nl| {
+            const line = std.mem.trimEnd(u8, request[line_start..nl], "\r");
+            if (line.len >= 5 and std.ascii.eqlIgnoreCase(line[0..5], "Host:")) {
+                const val = std.mem.trim(u8, line[5..], " \t");
+                if (val.len > 0) return val;
+            }
+            if (nl + 1 >= request.len) break;
+            line_start = nl + 1;
+        }
+        return null;
+    }
+
+    /// Send a 200 response with an explicit content type.
+    fn serveBody(self: *Server, stream: std.Io.net.Stream, content_type: []const u8, body: []const u8) !void {
+        const response = try std.fmt.allocPrint(self.allocator, "HTTP/1.1 200 OK\r\nContent-Type: {s}\r\nContent-Length: {d}\r\n\r\n{s}", .{ content_type, body.len, body });
+        defer self.allocator.free(response);
+        try compat.streamWriteAll(stream, self.io, response);
+    }
+
+    /// Generate sitemap.xml at request time so the URLs match whatever domain
+    /// the operator configured (see `resolveBaseUrl`).
+    fn handleSitemap(self: *Server, stream: std.Io.net.Stream, request: []const u8) !void {
+        const base = try self.resolveBaseUrl(request);
+        defer self.allocator.free(base);
+
+        const Entry = struct { path: []const u8, freq: []const u8, prio: []const u8 };
+        const entries = [_]Entry{
+            .{ .path = "/", .freq = "daily", .prio = "1.0" },
+            .{ .path = "/packages", .freq = "daily", .prio = "0.9" },
+            .{ .path = "/trending", .freq = "daily", .prio = "0.8" },
+            .{ .path = "/search", .freq = "weekly", .prio = "0.6" },
+            .{ .path = "/publish", .freq = "monthly", .prio = "0.6" },
+            .{ .path = "/docs", .freq = "weekly", .prio = "0.8" },
+            .{ .path = "/docs/getting-started", .freq = "weekly", .prio = "0.7" },
+            .{ .path = "/docs/api", .freq = "weekly", .prio = "0.7" },
+            .{ .path = "/docs/cli", .freq = "weekly", .prio = "0.7" },
+            .{ .path = "/docs/contribute", .freq = "monthly", .prio = "0.6" },
+            .{ .path = "/status", .freq = "hourly", .prio = "0.5" },
+            .{ .path = "/support", .freq = "monthly", .prio = "0.5" },
+            .{ .path = "/about", .freq = "monthly", .prio = "0.5" },
+        };
+
+        var body: std.ArrayList(u8) = .empty;
+        defer body.deinit(self.allocator);
+        try body.appendSlice(self.allocator, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n");
+        for (entries) |e| {
+            const line = try std.fmt.allocPrint(self.allocator, "  <url><loc>{s}{s}</loc><changefreq>{s}</changefreq><priority>{s}</priority></url>\n", .{ base, e.path, e.freq, e.prio });
+            defer self.allocator.free(line);
+            try body.appendSlice(self.allocator, line);
+        }
+        try body.appendSlice(self.allocator, "</urlset>\n");
+
+        try self.serveBody(stream, "application/xml", body.items);
+    }
+
+    /// Generate robots.txt at request time so the `Sitemap:` line points at the
+    /// operator's configured domain (see `resolveBaseUrl`).
+    fn handleRobots(self: *Server, stream: std.Io.net.Stream, request: []const u8) !void {
+        const base = try self.resolveBaseUrl(request);
+        defer self.allocator.free(base);
+
+        const body = try std.fmt.allocPrint(self.allocator, "User-agent: *\nAllow: /\n\nSitemap: {s}/sitemap.xml\n", .{base});
+        defer self.allocator.free(body);
+
+        try self.serveBody(stream, "text/plain", body);
+    }
+
     fn handleStatsApi(self: *Server, stream: std.Io.net.Stream) !void {
         const stats = try self.database.getDownloadStats();
         
@@ -2260,9 +2174,9 @@ pub const Server = struct {
             \\  "total_downloads": {},
             \\  "downloads_today": {},
             \\  "active_maintainers": 89,
-            \\  "zig_version": "0.16.0"
+            \\  "zig_version": "{s}"
             \\}}
-        , .{ stats.total_packages, stats.total_downloads, stats.downloads_today });
+        , .{ stats.total_packages, stats.total_downloads, stats.downloads_today, builtin.zig_version_string });
         defer self.allocator.free(json_response);
 
         try self.serveJson(stream, 200, json_response);
@@ -2284,20 +2198,7 @@ pub const Server = struct {
         return json.toOwnedSlice();
     }
 
-    fn handleRegister(self: *Server, stream: std.Io.net.Stream) !void {
-        var buffer: [8192]u8 = undefined;
-        var read_buf: [4096]u8 = undefined;
-        var reader = stream.reader(self.io, &read_buf);
-        const bytes_read = reader.interface.readSliceShort(&buffer) catch 0;
-        const request = buffer[0..bytes_read];
-        
-        // Find the body after headers
-        const header_end = std.mem.indexOf(u8, request, "\r\n\r\n") orelse {
-            try self.serveJsonError(stream, 400, "Invalid request");
-            return;
-        };
-        const body = request[header_end + 4..];
-        
+    fn handleRegister(self: *Server, stream: std.Io.net.Stream, body: []const u8) !void {
         // Simple JSON parsing for username, email, and password
         var username: ?[]const u8 = null;
         var email: ?[]const u8 = null; 
@@ -2338,18 +2239,27 @@ pub const Server = struct {
             try self.serveJsonError(stream, 409, "Username already exists");
             return;
         }
-        
+
         // Hash password
         const password_hash = try self.auth.hashPassword(password.?);
         defer self.allocator.free(password_hash);
-        
-        // Generate API token
-        const token = try self.auth.generateApiToken(1); // Will need proper user ID after creation
+
+        // Mint a session token for the new user. The stable id is derived from
+        // the username so login (which recomputes it) agrees with register.
+        const user_id = Database.localUserId(username.?);
+        const token = try self.session.createToken(.{
+            .id = user_id,
+            .username = username.?,
+            .email = email.?,
+            .display_name = null,
+            .avatar_url = null,
+            .provider = "local",
+        });
         defer self.allocator.free(token);
-        
-        // Create user
+
+        // Persist the user (password hash + the issued token as the api_token).
         try self.database.createUser(username.?, email.?, password_hash, token);
-        
+
         // Return success with token
         const json_response = try std.fmt.allocPrint(self.allocator,
             \\{{
@@ -2359,178 +2269,83 @@ pub const Server = struct {
             \\}}
         , .{ username.?, email.?, token });
         defer self.allocator.free(json_response);
-        
+
         try self.serveJson(stream, 201, json_response);
     }
     
-    fn handleLogin(self: *Server, stream: std.Io.net.Stream) !void {
-        // TODO: Implement proper login after User type is defined
-        try self.serveJsonError(stream, 501, "Login not implemented yet");
+    fn handleLogin(self: *Server, stream: std.Io.net.Stream, body: []const u8) !void {
+        const username = self.extractJsonString(body, "username");
+        const password = self.extractJsonString(body, "password");
+
+        if (username == null or password == null) {
+            try self.serveJsonError(stream, 400, "Missing required fields: username, password");
+            return;
+        }
+
+        // Look up the stored credentials; respond identically whether the user
+        // is absent or the password is wrong to avoid leaking which usernames
+        // exist.
+        const user_auth = (try self.database.getUserAuth(username.?)) orelse {
+            try self.serveJsonError(stream, 401, "Invalid username or password");
+            return;
+        };
+        defer user_auth.deinit(self.allocator);
+
+        const ok = self.auth.verifyPassword(password.?, user_auth.password_hash) catch false;
+        if (!ok) {
+            try self.serveJsonError(stream, 401, "Invalid username or password");
+            return;
+        }
+
+        const token = try self.session.createToken(.{
+            .id = user_auth.id,
+            .username = username.?,
+            .email = user_auth.email,
+            .display_name = null,
+            .avatar_url = null,
+            .provider = "local",
+        });
+        defer self.allocator.free(token);
+
+        const json_response = try std.fmt.allocPrint(self.allocator,
+            \\{{
+            \\  "username": "{s}",
+            \\  "email": "{s}",
+            \\  "token": "{s}"
+            \\}}
+        , .{ username.?, user_auth.email, token });
+        defer self.allocator.free(json_response);
+
+        try self.serveJson(stream, 200, json_response);
     }
 
-    // Login disabled - will be re-implemented when User type is added
-
     fn validateAuthToken(self: *Server, request: []const u8) !?AuthenticatedUser {
-        // Debug: print request headers (first 500 chars)
-        std.debug.print("AUTH DEBUG request ({} bytes):\n{s}\n---END---\n", .{request.len, request[0..@min(request.len, 500)]});
-
         // Extract Authorization header (case-insensitive search)
         var auth_header_start: ?usize = std.mem.indexOf(u8, request, "Authorization: ");
         if (auth_header_start == null) {
             auth_header_start = std.mem.indexOf(u8, request, "authorization: ");
         }
+        if (auth_header_start == null) return null;
 
-        if (auth_header_start == null) {
-            std.debug.print("AUTH: No Authorization header found (checked both cases)\n", .{});
-            return null;
-        }
         const auth_start = auth_header_start.?;
-        const auth_line_end = std.mem.indexOf(u8, request[auth_start..], "\r\n") orelse {
-            std.debug.print("AUTH: No line end after Authorization header\n", .{});
-            return null;
-        };
-        const auth_header = request[auth_start + 15..auth_start + auth_line_end];
-        std.debug.print("AUTH: Header found: {s}\n", .{auth_header[0..@min(auth_header.len, 50)]});
+        const auth_line_end = std.mem.indexOf(u8, request[auth_start..], "\r\n") orelse return null;
+        const auth_header = request[auth_start + 15 .. auth_start + auth_line_end];
 
         // Extract Bearer token
-        const token = Auth.extractBearerToken(auth_header) orelse {
-            std.debug.print("AUTH: No Bearer token in header\n", .{});
-            return null;
-        };
-        std.debug.print("AUTH: Token length={} dots=", .{token.len});
+        const token = Auth.extractBearerToken(auth_header) orelse return null;
 
-        // Check if this is a JWT (has two dots separating three parts)
-        var dot_count: usize = 0;
-        for (token) |c| {
-            if (c == '.') dot_count += 1;
-        }
-        std.debug.print("{}\n", .{dot_count});
+        // Single token format: HS256 session JWT validated by the session manager.
+        const claims = (self.session.validateToken(token) catch return null) orelse return null;
 
-        if (dot_count == 2) {
-            // This is a JWT from OAuth - validate and parse it
-            return self.validateJWTToken(token);
-        }
-
-        // Fall back to legacy API token validation
-        const auth_token = self.auth.validateApiToken(token) catch return null;
-        defer self.allocator.free(auth_token.token);
-
-        // Get user info from database for legacy tokens
-        const username = try std.fmt.allocPrint(self.allocator, "user_{}", .{auth_token.user_id});
-        const email = try std.fmt.allocPrint(self.allocator, "user_{}@example.com", .{auth_token.user_id});
-        const display_name = try std.fmt.allocPrint(self.allocator, "User {}", .{auth_token.user_id});
-        const avatar_url = try self.allocator.dupe(u8, "");
-        const provider = try self.allocator.dupe(u8, "local");
-
+        // Ownership of the claim strings transfers to the AuthenticatedUser; the
+        // caller frees them (see handleUserProfile). Do not call claims.deinit.
         return AuthenticatedUser{
-            .username = username,
-            .user_id = auth_token.user_id,
-            .email = email,
-            .display_name = display_name,
-            .avatar_url = avatar_url,
-            .provider = provider,
-        };
-    }
-
-    fn validateJWTToken(self: *Server, token: []const u8) !?AuthenticatedUser {
-        // Split JWT into parts: header.payload.signature
-        var parts = std.mem.splitSequence(u8, token, ".");
-        const header_b64 = parts.next() orelse return null;
-        const payload_b64 = parts.next() orelse return null;
-        const signature_b64 = parts.next() orelse return null;
-
-        // Get JWT secret from environment
-        const jwt_secret = self.environ_map.get("JWT_SECRET") orelse "default_secret_change_in_production";
-
-        // Verify signature - signing input is "header.payload"
-        const signing_input = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{
-            header_b64,
-            payload_b64
-        });
-        defer self.allocator.free(signing_input);
-
-        var hmac = std.crypto.auth.hmac.sha2.HmacSha256.init(jwt_secret);
-        hmac.update(signing_input);
-        var expected_signature: [32]u8 = undefined;
-        hmac.final(&expected_signature);
-
-        var exp_buf: [64]u8 = undefined;
-        const expected_encoded = std.base64.url_safe_no_pad.Encoder.encode(&exp_buf, &expected_signature);
-
-        if (!std.mem.eql(u8, signature_b64, expected_encoded)) {
-            std.debug.print("JWT validation failed:\n  secret_len={}\n  expected={s}\n  actual={s}\n", .{
-                jwt_secret.len,
-                expected_encoded,
-                signature_b64,
-            });
-            return null;
-        }
-        std.debug.print("JWT validation successful for token\n", .{});
-
-        // Decode payload
-        const decoder = std.base64.url_safe_no_pad.Decoder;
-        const decoded_len = decoder.calcSizeForSlice(payload_b64) catch return null;
-        const payload = try self.allocator.alloc(u8, decoded_len);
-        defer self.allocator.free(payload);
-        decoder.decode(payload, payload_b64) catch return null;
-
-        // Parse JSON payload to extract user data
-        // Look for: "sub", "username", "email", "display_name", "avatar_url", "provider", "exp"
-        var user_id: i64 = 0;
-        var username: []u8 = try self.allocator.dupe(u8, "unknown");
-        var email: []u8 = try self.allocator.dupe(u8, "");
-        var display_name: []u8 = try self.allocator.dupe(u8, "");
-        var avatar_url: []u8 = try self.allocator.dupe(u8, "");
-        var provider: []u8 = try self.allocator.dupe(u8, "oauth");
-        var exp: i64 = 0;
-
-        // Simple JSON parsing (field by field)
-        if (self.extractJsonString(payload, "username")) |val| {
-            self.allocator.free(username);
-            username = try self.allocator.dupe(u8, val);
-        }
-        if (self.extractJsonString(payload, "email")) |val| {
-            self.allocator.free(email);
-            email = try self.allocator.dupe(u8, val);
-        }
-        if (self.extractJsonString(payload, "display_name")) |val| {
-            self.allocator.free(display_name);
-            display_name = try self.allocator.dupe(u8, val);
-        }
-        if (self.extractJsonString(payload, "avatar_url")) |val| {
-            self.allocator.free(avatar_url);
-            avatar_url = try self.allocator.dupe(u8, val);
-        }
-        if (self.extractJsonString(payload, "provider")) |val| {
-            self.allocator.free(provider);
-            provider = try self.allocator.dupe(u8, val);
-        }
-        if (self.extractJsonInt(payload, "sub")) |val| {
-            user_id = val;
-        }
-        if (self.extractJsonInt(payload, "exp")) |val| {
-            exp = val;
-        }
-
-        // Check expiration
-        const now = compat.timestamp();
-        if (exp > 0 and now > exp) {
-            std.debug.print("JWT token expired: now={} exp={}\n", .{now, exp});
-            self.allocator.free(username);
-            self.allocator.free(email);
-            self.allocator.free(display_name);
-            self.allocator.free(avatar_url);
-            self.allocator.free(provider);
-            return null;
-        }
-
-        return AuthenticatedUser{
-            .username = username,
-            .user_id = user_id,
-            .email = email,
-            .display_name = display_name,
-            .avatar_url = avatar_url,
-            .provider = provider,
+            .username = claims.username,
+            .user_id = claims.user_id,
+            .email = claims.email,
+            .display_name = claims.display_name,
+            .avatar_url = claims.avatar_url,
+            .provider = claims.provider,
         };
     }
 
@@ -2973,7 +2788,7 @@ pub const Server = struct {
         _ = version;
         
         // For now, return a mock hash
-        const hash = "1220" ++ "abcdef0123456789" ** 4; // Mock SHA256 hash in hex
+        const hash = "1220" ++ "abcdef0123456789" ++ "abcdef0123456789" ++ "abcdef0123456789" ++ "abcdef0123456789"; // Mock SHA256 hash in hex
         
         const response = try std.fmt.allocPrint(self.allocator,
             "HTTP/1.1 200 OK\r\n" ++
@@ -3022,17 +2837,16 @@ pub const Server = struct {
     }
     
     // OAuth/OIDC Authentication Handlers
-    const unified_auth = @import("../auth/unified_auth.zig");
-    
+
     fn handleMicrosoftLogin(self: *Server, stream: std.Io.net.Stream) !void {
-        // Initialize unified auth system
-        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator, self.io, self.environ_map) catch {
-            return self.serveJsonError(stream, 500, "Authentication system not configured");
+        const config = entra.getConfig(self.allocator, self.environ_map) catch {
+            return self.serveJsonError(stream, 500, "Microsoft authentication not configured");
         };
-        defer auth_system.deinit();
-        
-        // Get authorization URL (Microsoft OIDC handles its own state parameter)
-        const auth_url = auth_system.getAuthorizationUrl(.microsoft) catch {
+        var client = oidc.OIDCClient.init(self.allocator, self.io, config);
+        defer client.deinit();
+
+        // Get authorization URL (the OIDC client embeds its own state + nonce)
+        const auth_url = client.getAuthorizationUrl() catch {
             return self.serveJsonError(stream, 500, "Failed to generate authorization URL");
         };
         defer self.allocator.free(auth_url);
@@ -3089,32 +2903,43 @@ pub const Server = struct {
             return self.serveJsonError(stream, 400, "Missing OAuth state parameter");
         }
         
-        // Initialize unified auth system
-        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator, self.io, self.environ_map) catch {
-            return self.serveJsonError(stream, 500, "Authentication system not configured");
+        const config = entra.getConfig(self.allocator, self.environ_map) catch {
+            return self.serveJsonError(stream, 500, "Microsoft authentication not configured");
         };
-        defer auth_system.deinit();
-        
-        // Exchange code for user info
-        std.debug.print("🔄 Exchanging Microsoft auth code for user info...\n", .{});
-        const user = auth_system.handleCallback(.microsoft, auth_code) catch |err| {
-            std.debug.print("❌ Microsoft auth failed: {}\n", .{err});
+        var client = oidc.OIDCClient.init(self.allocator, self.io, config);
+        defer client.deinit();
+
+        // Exchange code for tokens, then fetch the normalized user profile.
+        const token_response = client.exchangeCodeForToken(auth_code) catch {
             return self.serveJsonError(stream, 500, "Failed to exchange authorization code");
         };
-        std.debug.print("✅ Microsoft user authenticated: {s}\n", .{user.username});
-        defer {
-            self.allocator.free(user.username);
-            self.allocator.free(user.email);
-            if (user.display_name) |dn| self.allocator.free(dn);
-            if (user.avatar_url) |au| self.allocator.free(au);
-        }
-        
-        // Create JWT token
-        const jwt_token = auth_system.createJWT(user) catch {
+        defer token_response.deinit(self.allocator);
+
+        const userinfo = client.getUserInfo(token_response.access_token) catch {
+            return self.serveJsonError(stream, 500, "Failed to fetch user info");
+        };
+        defer userinfo.deinit(self.allocator);
+
+        const username = userinfo.preferred_username orelse userinfo.email orelse userinfo.sub;
+        const email = userinfo.email orelse "";
+        const display_name = userinfo.name orelse username;
+
+        const user_id = self.database.findOrCreateOAuthUser("microsoft", userinfo.sub, username, email) catch {
+            return self.serveJsonError(stream, 500, "Failed to persist user");
+        };
+
+        const jwt_token = self.session.createToken(.{
+            .id = user_id,
+            .username = username,
+            .email = email,
+            .display_name = userinfo.name,
+            .avatar_url = userinfo.picture,
+            .provider = "microsoft",
+        }) catch {
             return self.serveJsonError(stream, 500, "Failed to create session token");
         };
         defer self.allocator.free(jwt_token);
-        
+
         // Redirect to success page with token
         const success_response = try std.fmt.allocPrint(self.allocator,
             \\HTTP/1.1 200 OK
@@ -3139,30 +2964,180 @@ pub const Server = struct {
             \\</script>
             \\</body></html>
         ,
-            .{ 
-                jwt_token, 
-                user.display_name orelse user.username, 
-                jwt_token, 
-                user.username,
-                user.display_name orelse user.username,
-                user.avatar_url orelse "",
-                user.email
+            .{
+                jwt_token,
+                display_name,
+                jwt_token,
+                username,
+                display_name,
+                userinfo.picture orelse "",
+                email
             }
         );
         defer self.allocator.free(success_response);
-        
+
         try compat.streamWriteAll(stream, self.io, success_response);
     }
-    
-    fn handleGitHubLogin(self: *Server, stream: std.Io.net.Stream) !void {
-        // Initialize unified auth system
-        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator, self.io, self.environ_map) catch {
-            return self.serveJsonError(stream, 500, "Authentication system not configured");
+
+    fn handleGoogleLogin(self: *Server, stream: std.Io.net.Stream) !void {
+        const config = google.getConfig(self.allocator, self.environ_map) catch {
+            return self.serveJsonError(stream, 500, "Google authentication not configured");
         };
-        defer auth_system.deinit();
-        
+        var client = oidc.OIDCClient.init(self.allocator, self.io, config);
+        defer client.deinit();
+
+        // Get authorization URL (the OIDC client embeds its own state + nonce)
+        const auth_url = client.getAuthorizationUrl() catch {
+            return self.serveJsonError(stream, 500, "Failed to generate authorization URL");
+        };
+        defer self.allocator.free(auth_url);
+
+        const redirect_response = try std.fmt.allocPrint(self.allocator,
+            "HTTP/1.1 302 Found\r\n" ++
+            "Location: {s}\r\n" ++
+            "\r\n",
+            .{auth_url}
+        );
+        defer self.allocator.free(redirect_response);
+
+        try compat.streamWriteAll(stream, self.io, redirect_response);
+    }
+
+    fn handleGoogleCallback(self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8) !void {
+        _ = request; // Google OIDC carries state in the redirect, no cookie needed
+
+        const query_start = std.mem.indexOf(u8, path, "?") orelse {
+            return self.serveJsonError(stream, 400, "Missing authorization code");
+        };
+        const query = path[query_start + 1..];
+
+        var code: ?[]const u8 = null;
+        var state: ?[]const u8 = null;
+        var error_param: ?[]const u8 = null;
+
+        var params = std.mem.splitSequence(u8, query, "&");
+        while (params.next()) |param| {
+            if (std.mem.startsWith(u8, param, "code=")) {
+                code = param[5..];
+            } else if (std.mem.startsWith(u8, param, "state=")) {
+                state = param[6..];
+            } else if (std.mem.startsWith(u8, param, "error=")) {
+                error_param = param[6..];
+            }
+        }
+
+        if (error_param) |err| {
+            const error_msg = try std.fmt.allocPrint(self.allocator, "OAuth error: {s}", .{err});
+            defer self.allocator.free(error_msg);
+            return self.serveJsonError(stream, 400, error_msg);
+        }
+
+        const auth_code = code orelse {
+            return self.serveJsonError(stream, 400, "Missing authorization code");
+        };
+
+        if (state == null) {
+            return self.serveJsonError(stream, 400, "Missing OAuth state parameter");
+        }
+
+        const config = google.getConfig(self.allocator, self.environ_map) catch {
+            return self.serveJsonError(stream, 500, "Google authentication not configured");
+        };
+        var client = oidc.OIDCClient.init(self.allocator, self.io, config);
+        defer client.deinit();
+
+        const token_response = client.exchangeCodeForToken(auth_code) catch {
+            return self.serveJsonError(stream, 500, "Failed to exchange authorization code");
+        };
+        defer token_response.deinit(self.allocator);
+
+        const userinfo = client.getUserInfo(token_response.access_token) catch {
+            return self.serveJsonError(stream, 500, "Failed to fetch user info");
+        };
+        defer userinfo.deinit(self.allocator);
+
+        const username = userinfo.preferred_username orelse userinfo.email orelse userinfo.sub;
+        const email = userinfo.email orelse "";
+        const display_name = userinfo.name orelse username;
+
+        const user_id = self.database.findOrCreateOAuthUser("google", userinfo.sub, username, email) catch {
+            return self.serveJsonError(stream, 500, "Failed to persist user");
+        };
+
+        const jwt_token = self.session.createToken(.{
+            .id = user_id,
+            .username = username,
+            .email = email,
+            .display_name = userinfo.name,
+            .avatar_url = userinfo.picture,
+            .provider = "google",
+        }) catch {
+            return self.serveJsonError(stream, 500, "Failed to create session token");
+        };
+        defer self.allocator.free(jwt_token);
+
+        const success_response = try std.fmt.allocPrint(self.allocator,
+            \\HTTP/1.1 200 OK
+            \\Content-Type: text/html
+            \\Set-Cookie: zepplin_token={s}; HttpOnly; Path=/; Max-Age=86400
+            \\
+            \\<!DOCTYPE html>
+            \\<html><head><title>Login Success</title></head>
+            \\<body>
+            \\<h2>Login Successful!</h2>
+            \\<p>Welcome, {s}! You can close this window.</p>
+            \\<script>
+            \\var token = '{s}';
+            \\console.log('OAuth callback - Setting token, length:', token.length);
+            \\localStorage.setItem('zepplin_token', token);
+            \\localStorage.setItem('zepplin_username', '{s}');
+            \\localStorage.setItem('zepplin_display_name', '{s}');
+            \\localStorage.setItem('zepplin_avatar_url', '{s}');
+            \\localStorage.setItem('zepplin_email', '{s}');
+            \\console.log('Stored token check:', localStorage.getItem('zepplin_token')?.substring(0, 20));
+            \\setTimeout(() => window.location.href = '/', 2000);
+            \\</script>
+            \\</body></html>
+        ,
+            .{
+                jwt_token,
+                display_name,
+                jwt_token,
+                username,
+                display_name,
+                userinfo.picture orelse "",
+                email
+            }
+        );
+        defer self.allocator.free(success_response);
+
+        try compat.streamWriteAll(stream, self.io, success_response);
+    }
+
+    /// Report which OAuth/OIDC providers have credentials configured, so the
+    /// frontend can render only the buttons that will actually work.
+    fn handleAuthProviders(self: *Server, stream: std.Io.net.Stream) !void {
+        const json = try std.fmt.allocPrint(self.allocator,
+            "{{\"github\":{},\"microsoft\":{},\"google\":{}}}",
+            .{
+                github.isConfigured(self.environ_map),
+                entra.isConfigured(self.environ_map),
+                google.isConfigured(self.environ_map),
+            },
+        );
+        defer self.allocator.free(json);
+        try self.serveJson(stream, 200, json);
+    }
+
+    fn handleGitHubLogin(self: *Server, stream: std.Io.net.Stream) !void {
+        const config = github.GitHubOAuthConfig.fromEnv(self.allocator, self.environ_map) catch {
+            return self.serveJsonError(stream, 500, "GitHub authentication not configured");
+        };
+        var client = github.GitHubOAuthClient.init(self.allocator, self.io, config);
+        defer client.deinit();
+
         // Get authorization URL
-        const auth_url = auth_system.getAuthorizationUrl(.github) catch {
+        const auth_url = client.getAuthorizationUrl() catch {
             return self.serveJsonError(stream, 500, "Failed to generate authorization URL");
         };
         defer self.allocator.free(auth_url);
@@ -3252,29 +3227,46 @@ pub const Server = struct {
             return self.serveJsonError(stream, 400, "Missing OAuth state parameter");
         }
         
-        // Initialize unified auth system
-        var auth_system = unified_auth.UnifiedAuthSystem.init(self.allocator, self.io, self.environ_map) catch {
-            return self.serveJsonError(stream, 500, "Authentication system not configured");
+        const config = github.GitHubOAuthConfig.fromEnv(self.allocator, self.environ_map) catch {
+            return self.serveJsonError(stream, 500, "GitHub authentication not configured");
         };
-        defer auth_system.deinit();
-        
-        // Exchange code for user info
-        const user = auth_system.handleCallback(.github, auth_code) catch {
+        var client = github.GitHubOAuthClient.init(self.allocator, self.io, config);
+        defer client.deinit();
+
+        // Exchange code for tokens, then fetch the GitHub user profile.
+        const token_response = client.exchangeCodeForToken(auth_code) catch {
             return self.serveJsonError(stream, 500, "Failed to exchange authorization code");
         };
-        defer {
-            self.allocator.free(user.username);
-            self.allocator.free(user.email);
-            if (user.display_name) |dn| self.allocator.free(dn);
-            if (user.avatar_url) |au| self.allocator.free(au);
-        }
-        
-        // Create JWT token
-        const jwt_token = auth_system.createJWT(user) catch {
+        defer token_response.deinit(self.allocator);
+
+        const gh_user = client.getUser(token_response.access_token) catch {
+            return self.serveJsonError(stream, 500, "Failed to fetch user info");
+        };
+        defer gh_user.deinit(self.allocator);
+
+        var ext_buf: [32]u8 = undefined;
+        const external_id = std.fmt.bufPrint(&ext_buf, "{d}", .{gh_user.id}) catch unreachable;
+
+        const username = gh_user.login;
+        const email = gh_user.email orelse "";
+        const display_name = gh_user.name orelse gh_user.login;
+
+        const user_id = self.database.findOrCreateOAuthUser("github", external_id, username, email) catch {
+            return self.serveJsonError(stream, 500, "Failed to persist user");
+        };
+
+        const jwt_token = self.session.createToken(.{
+            .id = user_id,
+            .username = username,
+            .email = email,
+            .display_name = gh_user.name,
+            .avatar_url = gh_user.avatar_url,
+            .provider = "github",
+        }) catch {
             return self.serveJsonError(stream, 500, "Failed to create session token");
         };
         defer self.allocator.free(jwt_token);
-        
+
         // Redirect to success page with token
         const success_response = try std.fmt.allocPrint(self.allocator,
             \\HTTP/1.1 200 OK
@@ -3299,21 +3291,21 @@ pub const Server = struct {
             \\</script>
             \\</body></html>
         ,
-            .{ 
-                jwt_token, 
-                user.display_name orelse user.username, 
-                jwt_token, 
-                user.username,
-                user.display_name orelse user.username,
-                user.avatar_url orelse "",
-                user.email
+            .{
+                jwt_token,
+                display_name,
+                jwt_token,
+                username,
+                display_name,
+                gh_user.avatar_url orelse "",
+                email
             }
         );
         defer self.allocator.free(success_response);
-        
+
         try compat.streamWriteAll(stream, self.io, success_response);
     }
-    
+
     // Comment API handlers
     fn handleCommentsApiV1(self: *Server, stream: std.Io.net.Stream, path: []const u8, request: []const u8, request_allocator: std.mem.Allocator) !void {
         _ = request_allocator;

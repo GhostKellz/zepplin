@@ -1,0 +1,30 @@
+---
+// A single package card. Designed to be used as the body of an Alpine
+// `<template x-for="pkg in packages" :key="pkg.name">` loop, so every binding
+// reads from the loop-local `pkg`. All dynamic text uses `x-text` (escaped) —
+// never x-html — to keep API-supplied names/descriptions XSS-safe.
+---
+<div class="package-card" :data-package="pkg.name">
+  <div class="package-header">
+    <div class="package-name" x-text="pkg.name || 'unknown'"></div>
+    <div class="package-version" x-text="`v${pkg.latest_version || pkg.version || '1.0.0'}`"></div>
+  </div>
+  <div class="package-description" x-text="pkg.description || 'No description available'"></div>
+  <div class="package-meta">
+    <div class="package-downloads">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7,10 12,15 17,10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      <span x-text="$fmtNumber(pkg.download_count ?? pkg.downloads ?? 0)"></span>
+    </div>
+    <div class="package-updated">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12,6 12,12 16,14"></polyline>
+      </svg>
+      <span x-text="$fmtDate(pkg.updated_at || pkg.last_updated)"></span>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,116 @@
+---
+// Dual-track Zig compatibility callout. Shows the dev/master track (primary,
+// what Zepplin builds against) alongside the last stable release as a reference.
+import { ZIG } from '../data/versions';
+
+interface Props {
+  /** Optional extra note rendered under the tracks. */
+  note?: string;
+}
+const { note } = Astro.props;
+---
+<div class="zig-compat" role="note" aria-label="Zig version compatibility">
+  <div class="zig-compat-title">
+    <span class="zig-compat-bolt" aria-hidden="true">⚡</span>
+    Zig compatibility
+  </div>
+  <div class="zig-compat-tracks">
+    <div class="zig-track zig-track-dev">
+      <span class="zig-track-badge dev">DEV</span>
+      <div class="zig-track-body">
+        <strong>{ZIG.devLabel}</strong>
+        <span>Master track — what Zepplin builds &amp; tests against.</span>
+      </div>
+    </div>
+    <div class="zig-track zig-track-stable">
+      <span class="zig-track-badge stable">STABLE</span>
+      <div class="zig-track-body">
+        <strong>{ZIG.stableLabel}</strong>
+        <span>Last stable release — supported as a reference target.</span>
+      </div>
+    </div>
+  </div>
+  <p class="zig-compat-min">
+    Minimum: <code>{ZIG.minimum}</code>
+  </p>
+  {note && <p class="zig-compat-note">{note}</p>}
+</div>
+
+<style>
+  .zig-compat {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    border-left: 3px solid var(--lightning-500);
+    border-radius: var(--radius-md);
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .zig-compat-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: var(--lightning-400);
+    margin-bottom: 1rem;
+  }
+  .zig-compat-bolt {
+    filter: drop-shadow(0 0 6px rgba(255, 214, 10, 0.5));
+  }
+  .zig-compat-tracks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+  .zig-track {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .zig-track-badge {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-xs);
+  }
+  .zig-track-badge.dev {
+    background: rgba(255, 214, 10, 0.15);
+    color: var(--lightning-400);
+    border: 1px solid var(--lightning-700);
+  }
+  .zig-track-badge.stable {
+    background: rgba(6, 255, 165, 0.12);
+    color: var(--mint-400);
+    border: 1px solid rgba(6, 255, 165, 0.4);
+  }
+  .zig-track-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .zig-track-body strong {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+  }
+  .zig-track-body span {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .zig-compat-min {
+    margin: 1rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  .zig-compat-min code {
+    color: var(--lightning-400);
+    font-family: 'Fira Code', monospace;
+  }
+  .zig-compat-note {
+    margin: 0.5rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+</style>

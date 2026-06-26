@@ -1,0 +1,76 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="My Packages - Zepplin">
+  <div
+    class="my-packages-page"
+    x-data="{
+      loaded: false,
+      loggedIn: false,
+      async init() {
+        const token = localStorage.getItem('zepplin_token');
+        if (token) {
+          try {
+            const res = await fetch('/api/v1/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+            if (res.ok) this.loggedIn = true;
+          } catch (e) {}
+        }
+        this.loaded = true;
+      },
+    }"
+  >
+    <div class="not-logged-in" x-show="loaded && !loggedIn" x-cloak>
+      <h2>Not Logged In</h2>
+      <p>Please sign in to view your packages.</p>
+      <a href="/auth" class="login-btn">Sign In</a>
+    </div>
+
+    <div x-show="loaded && loggedIn" x-cloak>
+      <div class="page-header">
+        <h1>My Packages</h1>
+        <a href="/publish" class="publish-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 5v14M5 12h14"></path>
+          </svg>
+          Publish New Package
+        </a>
+      </div>
+
+      <div>
+        <div class="empty-state">
+          <h2>No packages yet</h2>
+          <p>You haven't published any packages. Get started by publishing your first Zig package!</p>
+          <a href="/publish" class="publish-btn">Publish Your First Package</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .my-packages-page { max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }
+  .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+  .page-header h1 { color: var(--text-primary, #fff); margin: 0; }
+  .publish-btn {
+    display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem;
+    background: var(--accent-color, #ffd60a); color: #000; text-decoration: none;
+    border-radius: 8px; font-weight: 600;
+  }
+  .publish-btn:hover { opacity: 0.9; }
+  .my-packages-page .empty-state {
+    text-align: center; padding: 4rem 2rem; background: var(--card-bg, #1a1a2e);
+    border-radius: 12px; border: 1px solid var(--border-color, #333);
+  }
+  .my-packages-page .empty-state h2 { color: var(--text-primary, #fff); margin: 0 0 1rem 0; }
+  .my-packages-page .empty-state p { color: var(--text-secondary, #888); margin: 0 0 1.5rem 0; }
+  .my-packages-page .not-logged-in {
+    text-align: center; padding: 3rem; background: var(--card-bg, #1a1a2e);
+    border-radius: 12px; border: 1px solid var(--border-color, #333);
+  }
+  .my-packages-page .not-logged-in h2 { color: var(--text-primary, #fff); }
+  .my-packages-page .not-logged-in p { color: var(--text-secondary, #888); margin-bottom: 1.5rem; }
+  .my-packages-page .login-btn {
+    display: inline-block; padding: 0.75rem 2rem; background: var(--accent-color, #ffd60a);
+    color: #000; text-decoration: none; border-radius: 8px; font-weight: 600;
+  }
+</style>

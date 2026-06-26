@@ -1,0 +1,57 @@
+---
+import '../styles/global.css';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import ScrollTop from '../components/ScrollTop.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+  active?: 'home' | 'browse' | 'trending' | 'docs';
+}
+const {
+  title = 'Zepplin - Zig Package Registry',
+  description = 'Discover, share, and manage Zig packages with lightning speed',
+  active,
+} = Astro.props;
+
+const ogImage = '/assets/Zepplin_preview.png';
+// The server serves clean routes (/docs), but `build.format: 'file'` emits
+// docs.html, so pathname is "/docs.html". Strip it back to the served URL.
+// Kept relative (no domain) so it stays correct for any self-hosted domain.
+const canonical = Astro.url.pathname.replace(/index\.html$/, '').replace(/\.html$/, '') || '/';
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0a1628" />
+    <title>{title}</title>
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/x-icon" href="/assets/logo/icons/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/logo/icons/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/logo/icons/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="128x128" href="/assets/logo/icons/favicon-128.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Zepplin Registry" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <style>[x-cloak] { display: none !important; }</style>
+  </head>
+  <body>
+    <a href="#main-content" class="skip-link">Skip to content</a>
+    <Nav active={active} />
+    <main id="main-content">
+      <slot />
+    </main>
+    <Footer />
+    <ScrollTop />
+  </body>
+</html>

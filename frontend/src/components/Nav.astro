@@ -1,0 +1,24 @@
+---
+import AuthNav from './AuthNav.astro';
+
+interface Props {
+  active?: 'home' | 'browse' | 'trending' | 'docs';
+}
+const { active } = Astro.props;
+---
+<header class="header">
+  <div class="container">
+    <div class="header-content">
+      <div class="logo">
+        <a href="/"><img src="/assets/logo/Zepplin-logo.png" alt="Zepplin" class="logo-img" /></a>
+      </div>
+      <nav class="nav" aria-label="Primary">
+        <a href="/" class:list={["nav-link", { active: active === 'home' }]} aria-current={active === 'home' ? 'page' : undefined}>Home</a>
+        <a href="/packages" class:list={["nav-link", { active: active === 'browse' }]} aria-current={active === 'browse' ? 'page' : undefined}>Browse</a>
+        <a href="/trending" class:list={["nav-link", { active: active === 'trending' }]} aria-current={active === 'trending' ? 'page' : undefined}>Trending</a>
+        <a href="/docs" class:list={["nav-link", { active: active === 'docs' }]} aria-current={active === 'docs' ? 'page' : undefined}>Docs</a>
+        <AuthNav />
+      </nav>
+    </div>
+  </div>
+</header>

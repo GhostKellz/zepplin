@@ -1,0 +1,153 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const channels = [
+  {
+    icon: '🐛',
+    title: 'GitHub Issues',
+    description: 'Report bugs or request features with reproduction steps.',
+    href: 'https://github.com/ghostkellz/zepplin/issues',
+    label: 'Open an issue',
+  },
+  {
+    icon: '💬',
+    title: 'GitHub Discussions',
+    description: 'Ask questions, share ideas, and get help from the community.',
+    href: 'https://github.com/ghostkellz/zepplin/discussions',
+    label: 'Start a discussion',
+  },
+  {
+    icon: '⚡',
+    title: 'Discord',
+    description: 'Chat with other Zig developers in real time.',
+    href: 'https://discord.gg/zig',
+    label: 'Join the chat',
+  },
+];
+
+const faqs = [
+  {
+    q: 'How do I add a dependency to my project?',
+    a: 'Use zig fetch --save <url> to add a package and its hash directly to your build.zig.zon, or run zepplin add <package> with the CLI.',
+  },
+  {
+    q: 'Which Zig version does Zepplin support?',
+    a: 'Zepplin tracks Zig master (0.17.x dev). Stable 0.16.x is supported as a reference target. Pin your project\u2019s minimum_zig_version accordingly.',
+  },
+  {
+    q: 'How do I publish a package?',
+    a: 'Make sure your build.zig.zon has name, version, description, and license fields, then run zepplin login followed by zepplin publish.',
+  },
+  {
+    q: 'Where is my data stored?',
+    a: 'Package metadata is stored in SQLite (via zqlite) and package archives are stored on the registry server\u2019s configured storage path.',
+  },
+];
+---
+<BaseLayout title="Support - Zepplin Registry" description="Get help with Zepplin: support channels, FAQ, and how to file a good bug report.">
+  <div class="support-container">
+    <header class="support-header">
+      <h1 class="support-title">Support</h1>
+      <p class="support-subtitle">Get help, ask questions, and report issues</p>
+    </header>
+
+    <h2 class="section-heading">Support Channels</h2>
+    <div class="channel-grid">
+      {channels.map((c) => (
+        <a href={c.href} class="channel-card" target="_blank" rel="noopener noreferrer">
+          <div class="channel-icon">{c.icon}</div>
+          <h3 class="channel-title">{c.title}</h3>
+          <p class="channel-description">{c.description}</p>
+          <span class="channel-link">{c.label} →</span>
+        </a>
+      ))}
+    </div>
+
+    <h2 class="section-heading">Frequently Asked Questions</h2>
+    <div class="faq-list" x-data="{ open: null }">
+      {faqs.map((faq, i) => (
+        <div class="faq-item">
+          <button
+            class="faq-question"
+            type="button"
+            x-on:click={`open = open === ${i} ? null : ${i}`}
+            x-bind:aria-expanded={`open === ${i}`}
+          >
+            <span>{faq.q}</span>
+            <span class="faq-toggle" x-bind:class={`{ 'open': open === ${i} }`}>+</span>
+          </button>
+          <div class="faq-answer" x-show={`open === ${i}`} x-cloak>
+            <p>{faq.a}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <h2 class="section-heading">Filing a Good Bug Report</h2>
+    <div class="bug-guide">
+      <p>To help us resolve issues quickly, please include:</p>
+      <ul>
+        <li>Your Zig version (<code>zig version</code>) and Zepplin version</li>
+        <li>Operating system and architecture</li>
+        <li>Clear steps to reproduce the problem</li>
+        <li>What you expected to happen vs. what actually happened</li>
+        <li>Relevant error messages, logs, or stack traces</li>
+      </ul>
+      <p class="bug-links">
+        Quick links: <a href="/docs/getting-started">Getting Started</a> ·
+        <a href="/docs/cli">CLI Reference</a> ·
+        <a href="/docs/api">API Reference</a>
+      </p>
+    </div>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .support-container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+  .support-header { margin-bottom: 2.5rem; }
+  .support-title { font-size: 2.5rem; font-weight: 700; color: var(--lightning-400); margin-bottom: 0.5rem; }
+  .support-subtitle { font-size: 1.2rem; color: var(--text-muted); }
+  .section-heading {
+    font-size: 1.75rem; font-weight: 600; color: var(--text-primary);
+    margin: 2.5rem 0 1.25rem;
+  }
+  .channel-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem;
+  }
+  .channel-card {
+    background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+    border-radius: var(--border-radius-md); padding: 1.5rem; text-decoration: none;
+    transition: var(--transition-base); display: block;
+  }
+  .channel-card:hover { border-color: var(--lightning-500); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .channel-icon { font-size: 2rem; margin-bottom: 0.75rem; }
+  .channel-title { font-size: 1.2rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem; }
+  .channel-description { color: var(--text-muted); line-height: 1.6; margin-bottom: 1rem; }
+  .channel-link { color: var(--lightning-400); font-weight: 500; }
+  .faq-list {
+    background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+    border-radius: var(--border-radius-md); overflow: hidden;
+  }
+  .faq-item { border-bottom: 1px solid var(--border-subtle); }
+  .faq-item:last-child { border-bottom: none; }
+  .faq-question {
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+    gap: 1rem; padding: 1.25rem 1.5rem; background: transparent; border: none;
+    color: var(--text-primary); font-size: 1.05rem; font-weight: 500; text-align: left;
+    cursor: pointer; transition: var(--transition-fast);
+  }
+  .faq-question:hover { color: var(--lightning-400); }
+  .faq-toggle { font-size: 1.5rem; color: var(--lightning-400); transition: transform 0.2s ease; flex-shrink: 0; }
+  .faq-toggle.open { transform: rotate(45deg); }
+  .faq-answer { padding: 0 1.5rem 1.25rem; }
+  .faq-answer p { color: var(--text-secondary); line-height: 1.7; margin: 0; }
+  .bug-guide {
+    background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+    border-radius: var(--border-radius-md); padding: 1.5rem 2rem;
+  }
+  .bug-guide p { color: var(--text-secondary); line-height: 1.7; margin-bottom: 1rem; }
+  .bug-guide ul { color: var(--text-secondary); line-height: 1.8; padding-left: 1.5rem; margin-bottom: 1rem; }
+  .bug-guide code { background: var(--bg-tertiary); padding: 0.2rem 0.4rem; border-radius: 0.25rem; color: var(--lightning-400); font-family: 'Fira Code', monospace; }
+  .bug-links { margin-bottom: 0 !important; }
+  .bug-links a { color: var(--lightning-400); }
+</style>

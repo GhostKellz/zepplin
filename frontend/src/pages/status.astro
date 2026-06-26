@@ -1,0 +1,147 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { ZIG } from '../data/versions';
+---
+<BaseLayout title="Status - Zepplin Registry" description="Live operational status of the Zepplin registry services.">
+  <div class="status-container">
+    <header class="status-header">
+      <h1 class="status-title">System Status</h1>
+      <p class="status-subtitle">Live health of the Zepplin registry services</p>
+    </header>
+
+    <div
+      x-data={`{
+        state: 'loading',
+        services: { api: 'unknown', registry: 'unknown', database: 'unknown' },
+        stats: { total_packages: '—', total_downloads: '—', zig_version: '${ZIG.dev}' },
+        async init() {
+          let healthOk = false;
+          try {
+            const res = await fetch('/health');
+            healthOk = res.ok;
+          } catch {}
+          let statsOk = false;
+          try {
+            const res = await fetch('/api/v1/stats');
+            if (res.ok) {
+              this.stats = await res.json();
+              statsOk = true;
+            }
+          } catch {}
+          if (healthOk && statsOk) {
+            this.state = 'operational';
+            this.services = { api: 'operational', registry: 'operational', database: 'operational' };
+          } else if (healthOk || statsOk) {
+            this.state = 'degraded';
+            this.services = {
+              api: healthOk ? 'operational' : 'degraded',
+              registry: statsOk ? 'operational' : 'degraded',
+              database: statsOk ? 'operational' : 'degraded',
+            };
+          } else {
+            this.state = 'down';
+            this.services = { api: 'down', registry: 'down', database: 'down' };
+          }
+        },
+      }`}
+    >
+      <div class="status-banner" :class="state">
+        <span class="status-dot" :class="state"></span>
+        <span x-show="state === 'loading'">Checking services…</span>
+        <span x-show="state === 'operational'" x-cloak>All systems operational</span>
+        <span x-show="state === 'degraded'" x-cloak>Partial outage — some services degraded</span>
+        <span x-show="state === 'down'" x-cloak>Major outage — services unreachable</span>
+      </div>
+
+      <div class="service-list">
+        <div class="service-row">
+          <span class="service-name">API</span>
+          <span class="service-status">
+            <span class="status-dot" :class="services.api"></span>
+            <span x-text="services.api"></span>
+          </span>
+        </div>
+        <div class="service-row">
+          <span class="service-name">Registry</span>
+          <span class="service-status">
+            <span class="status-dot" :class="services.registry"></span>
+            <span x-text="services.registry"></span>
+          </span>
+        </div>
+        <div class="service-row">
+          <span class="service-name">Database</span>
+          <span class="service-status">
+            <span class="status-dot" :class="services.database"></span>
+            <span x-text="services.database"></span>
+          </span>
+        </div>
+      </div>
+
+      <div class="status-metrics">
+        <div class="metric-card">
+          <div class="metric-value" x-text="$fmtNumber(stats.total_packages)">—</div>
+          <div class="metric-label">Total Packages</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" x-text="$fmtNumber(stats.total_downloads)">—</div>
+          <div class="metric-label">Total Downloads</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value metric-version" x-text="stats.zig_version">—</div>
+          <div class="metric-label">Zig Build Version</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  .status-container { max-width: 800px; margin: 0 auto; padding: 2rem; }
+  .status-header { margin-bottom: 2rem; }
+  .status-title { font-size: 2.5rem; font-weight: 700; color: var(--lightning-400); margin-bottom: 0.5rem; }
+  .status-subtitle { font-size: 1.2rem; color: var(--text-muted); }
+  .status-banner {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 1.25rem 1.5rem; border-radius: var(--border-radius-md);
+    font-size: 1.1rem; font-weight: 600; margin-bottom: 2rem;
+    background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+  }
+  .status-banner.operational { border-color: var(--mint-500, #2dd4bf); }
+  .status-banner.degraded { border-color: var(--lightning-500); }
+  .status-banner.down { border-color: #ef4444; }
+  .status-dot {
+    display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 50%;
+    background: var(--text-muted); flex-shrink: 0;
+  }
+  .status-dot.operational { background: #2dd4bf; box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.6); animation: pulse-dot 2s infinite; }
+  .status-dot.degraded { background: var(--lightning-500); }
+  .status-dot.down { background: #ef4444; }
+  .status-dot.loading { background: var(--text-muted); animation: pulse-dot 1.2s infinite; }
+  @keyframes pulse-dot {
+    0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(45, 212, 191, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0); }
+  }
+  .service-list {
+    background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+    border-radius: var(--border-radius-md); margin-bottom: 2rem; overflow: hidden;
+  }
+  .service-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-subtle);
+  }
+  .service-row:last-child { border-bottom: none; }
+  .service-name { color: var(--text-primary); font-weight: 500; }
+  .service-status { display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary); text-transform: capitalize; }
+  .status-metrics {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;
+  }
+  .metric-card {
+    background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+    border-radius: var(--border-radius-md); padding: 1.5rem; text-align: center;
+  }
+  .metric-value { font-size: 1.75rem; font-weight: 700; color: var(--lightning-400); margin-bottom: 0.25rem; }
+  .metric-version { font-size: 1.05rem; line-height: 1.35; word-break: break-word; overflow-wrap: anywhere; }
+  .metric-label { color: var(--text-muted); font-size: 0.9rem; }
+</style>

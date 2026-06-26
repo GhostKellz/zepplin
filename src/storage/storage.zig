@@ -267,7 +267,7 @@ pub const Storage = struct {
     }
 
     fn writeTarHeader(self: *Storage, tar_data: *std.ArrayList(u8), path: []const u8, size: u64) !void {
-        var header: [512]u8 = [_]u8{0} ** 512;
+        var header: [512]u8 = @splat(0);
 
         // Name (100 bytes)
         const name_len = @min(path.len, 100);

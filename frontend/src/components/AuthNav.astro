@@ -1,0 +1,79 @@
+---
+// Auth-aware right side of the nav. Driven entirely by the Alpine `auth` store.
+// While the store is hydrating (`!ready`) nothing renders, avoiding a flash of
+// the wrong logged-in/out state on the statically-served HTML.
+---
+<div id="auth-nav" x-data x-cloak>
+  {/* Logged out */}
+  <template x-if="$store.auth.ready && !$store.auth.isLoggedIn">
+    <span style="display:flex; gap:0.5rem; align-items:center;">
+      <a href="/auth" class="nav-link">Login</a>
+      <a href="/auth" class="nav-link nav-btn">Sign Up</a>
+    </span>
+  </template>
+
+  {/* Logged in */}
+  <template x-if="$store.auth.ready && $store.auth.isLoggedIn">
+    <span style="display:flex; gap:0.5rem; align-items:center;">
+      <a href="/publish" class="nav-link">Publish</a>
+      <div class="profile-dropdown" x-data="{ open: false }" @click.outside="open = false">
+        <button class="profile-trigger" @click="open = !open">
+          <template x-if="$store.auth.avatarUrl">
+            <img :src="$store.auth.avatarUrl" :alt="$store.auth.displayName" class="profile-avatar" />
+          </template>
+          <template x-if="!$store.auth.avatarUrl">
+            <div class="profile-avatar-placeholder" x-text="$store.auth.initial"></div>
+          </template>
+          <span class="profile-name" x-text="$store.auth.displayName"></span>
+          <svg class="profile-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+        <div class="profile-menu" :class="{ 'active': open }">
+          <div class="profile-menu-header">
+            <template x-if="$store.auth.avatarUrl">
+              <img :src="$store.auth.avatarUrl" :alt="$store.auth.displayName" class="profile-menu-avatar" />
+            </template>
+            <template x-if="!$store.auth.avatarUrl">
+              <div class="profile-menu-avatar-placeholder" x-text="$store.auth.initial"></div>
+            </template>
+            <div class="profile-menu-info">
+              <div class="profile-menu-name" x-text="$store.auth.displayName"></div>
+              <div class="profile-menu-email" x-text="$store.auth.email"></div>
+            </div>
+          </div>
+          <div class="profile-menu-divider"></div>
+          <a href="/profile" class="profile-menu-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            My Profile
+          </a>
+          <a href="/packages/my" class="profile-menu-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            </svg>
+            My Packages
+          </a>
+          <a href="/settings" class="profile-menu-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6m0 6v6m4.22-13.22l4.24 4.24M1.54 1.54l4.24 4.24M20.46 20.46l-4.24-4.24M1.54 20.46l4.24-4.24"></path>
+            </svg>
+            Settings
+          </a>
+          <div class="profile-menu-divider"></div>
+          <button class="profile-menu-item profile-menu-logout" @click="$store.auth.logout()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            Logout
+          </button>
+        </div>
+      </div>
+    </span>
+  </template>
+</div>

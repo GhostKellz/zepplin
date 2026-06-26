@@ -2,18 +2,23 @@
 .zig-cache/
 zig-out/
 
+# Frontend host artifacts (rebuilt inside the frontend-builder stage)
+frontend/node_modules/
+frontend/.astro/
+frontend/dist/
+dist/
+
 # Development files
 .git/
 .github/
-dev.sh
+scripts/
 
 # Documentation (keep only essential files)
 *.md
 !README.md
 
 # Test files
-test_*
-!test_api.zig
+tests/
 
 # Data directories
 data/

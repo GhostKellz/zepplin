@@ -34,6 +34,13 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Single source of truth for the package version: read it straight from
+    // build.zig.zon so version strings never have to be hand-maintained in source.
+    const version = @import("build.zig.zon").version;
+    const build_options = b.addOptions();
+    build_options.addOption([]const u8, "version", version);
+    const build_options_mod = build_options.createModule();
+
     const mod = b.addModule("zepplin", .{
         // The root source file is the "entry point" of this module. Users of
         // this module will only be able to access public declarations contained
@@ -46,6 +53,9 @@ pub fn build(b: *std.Build) void {
         // which requires us to specify a target.
         .target = target,
     });
+
+    // Make the version available to the library module's source files.
+    mod.addImport("build_options", build_options_mod);
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
@@ -92,6 +102,10 @@ pub fn build(b: *std.Build) void {
     // Add zqlite import for database operations
     exe.root_module.addImport("zqlite", zqlite.module("zqlite"));
 
+    // The executable's source files (main.zig imports server.zig directly) also
+    // need the version, so expose build_options on the exe's root module too.
+    exe.root_module.addImport("build_options", build_options_mod);
+
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden
@@ -120,9 +134,7 @@ pub fn build(b: *std.Build) void {
 
     // This allows the user to pass arguments to the application in the build
     // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
 
     // Creates an executable that will run `test` blocks from the provided module.
     // Here `mod` needs to define a target, which is why earlier we made sure to
